@@ -17,6 +17,35 @@ Log.setLevel(Log.Level.NONE);
 /** Longest a single track can plausibly be; anything longer is a compilation upload. */
 const MAX_SONG_DURATION_SECONDS = 15 * 60;
 
+const MUSIC_LANGUAGE_CODES: Record<string, string> = {
+  assamese: 'as', bengali: 'bn', bodo: 'brx', dogri: 'doi', gujarati: 'gu',
+  hindi: 'hi', kannada: 'kn', kashmiri: 'ks', konkani: 'kok', maithili: 'mai',
+  malayalam: 'ml', manipuri: 'mni', meitei: 'mni', marathi: 'mr', nepali: 'ne',
+  odia: 'or', oriya: 'or', punjabi: 'pa', sanskrit: 'sa', santali: 'sat',
+  sindhi: 'sd', tamil: 'ta', telugu: 'te', urdu: 'ur', english: 'en',
+  'manipuri (meitei)': 'mni',
+};
+
+function normalizeLanguage(value?: string): string | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  return MUSIC_LANGUAGE_CODES[normalized] || normalized;
+}
+
+export function filterSongsByLanguage(songs: Song[], language?: string): Song[] {
+  const selectedLanguage = normalizeLanguage(language);
+  if (!selectedLanguage || selectedLanguage === 'all') return songs;
+  return songs.filter((song) => normalizeLanguage(song.language) === selectedLanguage);
+}
+
+const MUSIC_LANGUAGE_NAMES: Record<string, string> = {
+  as: 'Assamese', bn: 'Bengali', brx: 'Bodo', doi: 'Dogri', gu: 'Gujarati',
+  hi: 'Hindi', kn: 'Kannada', ks: 'Kashmiri', kok: 'Konkani', mai: 'Maithili',
+  ml: 'Malayalam', mni: 'Manipuri', mr: 'Marathi', ne: 'Nepali', or: 'Odia',
+  pa: 'Punjabi', sa: 'Sanskrit', sat: 'Santali', sd: 'Sindhi', ta: 'Tamil',
+  te: 'Telugu', ur: 'Urdu', en: 'English',
+};
+
 /**
  * Drops feed entries that are not individual songs.
  *
@@ -510,6 +539,7 @@ class YouTubeMusicService {
       dominantColor: colors.dominant,
       accentColor: colors.accent,
       plays: item.views ? parseInt(String(item.views).replace(/[^0-9]/g, ''), 10) || undefined : undefined,
+      language: typeof item.language === 'string' && item.language.trim() ? item.language.trim() : undefined,
     };
   }
 
@@ -815,10 +845,11 @@ class YouTubeMusicService {
   }
 
   /**
-   * Real Home Feed with automated YouTube Music style recommendations tailored for Tamil music
+   * Live catalog discovery shelves, with strict provider-metadata filtering for selected languages.
    */
-  public async getHome(forceRefresh: boolean = false, mood?: string): Promise<HomeSection[]> {
-    const cacheKey = `home_${mood || 'all'}`;
+  public async getHome(forceRefresh: boolean = false, mood?: string, language?: string): Promise<HomeSection[]> {
+    const selectedLanguage = normalizeLanguage(language);
+    const cacheKey = `home_${mood || 'all'}_${selectedLanguage || 'default'}`;
     const cached = this.homeCache.get(cacheKey);
     if (!forceRefresh && cached && cached.expires > Date.now()) {
       return cached.data;
@@ -827,6 +858,40 @@ class YouTubeMusicService {
     const yt = await this.getInnertube();
     if (!yt) {
       throw new Error('Music backend engine currently unavailable');
+    }
+
+    if (selectedLanguage && selectedLanguage !== 'all') {
+      const languageName = MUSIC_LANGUAGE_NAMES[selectedLanguage];
+      if (!languageName) return [];
+
+      const results = await this.search(`${languageName} songs`, 'song', forceRefresh);
+      const songs = filterSongsByLanguage(results.songs, selectedLanguage);
+      const sections: HomeSection[] = songs.length
+        ? [{
+            id: `language-${selectedLanguage}`,
+            title: `${languageName} music`,
+            subtitle: `Songs confirmed as ${languageName} by provider metadata`,
+            type: 'song',
+            items: songs,
+          }]
+        : [];
+      this.homeCache.set(cacheKey, { data: sections, expires: Date.now() + 300_000 });
+      return sections;
+    }
+
+    if (selectedLanguage === 'all') {
+      const results = await this.search('trending music', 'song', forceRefresh);
+      const sections: HomeSection[] = results.songs.length
+        ? [{
+            id: 'trending-all-languages',
+            title: 'Trending music',
+            subtitle: 'Provider search results across languages',
+            type: 'song',
+            items: results.songs,
+          }]
+        : [];
+      this.homeCache.set(cacheKey, { data: sections, expires: Date.now() + 300_000 });
+      return sections;
     }
 
     const sections: HomeSection[] = [];
@@ -945,7 +1010,7 @@ class YouTubeMusicService {
     } else {
       queries = [
         quickPicksQueryDef,
-        { id: 'tamil-custom', title: 'Tamil Music Collection', subtitle: 'Curated for you', query: `${mood} Tamil songs`, type: 'song' },
+        { id: 'tamil-custom', title: 'Tamil Music Collection', subtitle: 'Provider catalog results', query: `${mood} Tamil songs`, type: 'song' },
       ];
     }
 
@@ -1737,8 +1802,9 @@ class YouTubeMusicService {
    * Uses YouTube's authentic recommendation graph (watch_next_feed).
    * Filters out redundant/similar title songs and ranks relevant music.
    */
-  public async getQueue(songId: string): Promise<Song[]> {
-    const cached = this.queueCache.get(songId);
+  public async getQueue(songId: string, language?: string): Promise<Song[]> {
+    const cacheKey = `${songId}:${normalizeLanguage(language) || 'all'}`;
+    const cached = this.queueCache.get(cacheKey);
     if (cached && cached.expires > Date.now()) {
       return cached.data;
     }
@@ -1784,7 +1850,14 @@ class YouTubeMusicService {
             Promise.race([p.catch(() => null), new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
 
           const curSong = this.songCache.get(songId)?.data;
-          const query = curSong ? `${curSong.title} ${curSong.artist}` : 'Tamil trending hit songs';
+          const selectedLanguage = normalizeLanguage(language);
+          const query = curSong
+            ? `${curSong.title} ${curSong.artist}`
+            : selectedLanguage === 'all'
+              ? 'trending music'
+              : selectedLanguage
+              ? `${MUSIC_LANGUAGE_NAMES[selectedLanguage] || ''} songs`
+              : 'Tamil trending hit songs';
           const fallback = await timeoutHelper(this.search(query, 'song'), 3000);
           if (fallback?.songs) {
             pool.push(...fallback.songs);
@@ -1796,8 +1869,9 @@ class YouTubeMusicService {
       const finalQueue: Song[] = [];
       const seenIds = new Set<string>([songId]);
       const acceptedTitles: string[] = [];
+      const languageFilteredPool = filterSongsByLanguage(pool, language);
 
-      for (const song of pool) {
+      for (const song of languageFilteredPool) {
         if (!song || !song.id || seenIds.has(song.id)) continue;
         if (!song.title || song.title === 'Unknown Track') continue;
 
@@ -1811,7 +1885,7 @@ class YouTubeMusicService {
         if (finalQueue.length >= 25) break;
       }
 
-      this.queueCache.set(songId, { data: finalQueue, expires: Date.now() + 3600_000 });
+      this.queueCache.set(cacheKey, { data: finalQueue, expires: Date.now() + 3600_000 });
       return finalQueue;
     } catch (err: any) {
       console.error(`getQueue error for ${songId}:`, err.message);

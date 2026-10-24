@@ -4,6 +4,7 @@ import { AppView, Song, Album, Artist, Playlist, AppSettings } from './types';
 import { usePlayer } from './hooks/usePlayer';
 import { useLibrary } from './hooks/useLibrary';
 import { db } from './services/indexedDB';
+import { loadMusicLanguagePreference, saveMusicLanguagePreference } from './services/musicLanguagePreference';
 
 // Layout Components
 import { TopBar } from './components/layout/TopBar';
@@ -29,7 +30,7 @@ import { AccountModal } from './components/common/AccountModal';
 import { TrackContextMenu } from './components/common/TrackContextMenu';
 import { AddToPlaylistModal } from './components/common/AddToPlaylistModal';
 import { NewPlaylistModal } from './components/common/NewPlaylistModal';
-import { subscribeToAuth } from './lib/firebase';
+import { fetchMusicLanguageFromFirestore, subscribeToAuth, syncMusicLanguageToFirestore } from './lib/firebase';
 import { User } from 'firebase/auth';
 
 export function App() {
@@ -57,6 +58,7 @@ export function App() {
 
   // Settings with all YouTube Music options
   const [settings, setSettings] = useState<AppSettings>({
+    musicLanguage: loadMusicLanguagePreference(),
     appearance: 'dark',
     reduceAnimation: false,
     reduceDynamicBlur: false,
@@ -120,6 +122,27 @@ export function App() {
     showStatsForNerds: false,
   });
 
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    fetchMusicLanguageFromFirestore(user.uid).then((musicLanguage) => {
+      if (!active) return;
+      if (musicLanguage) {
+        setSettings((previous) => {
+          const updated = { ...previous, musicLanguage };
+          saveMusicLanguagePreference(musicLanguage);
+          db.saveSetting('celestial_settings', updated);
+          return updated;
+        });
+      } else if (settings.musicLanguage) {
+        void syncMusicLanguageToFirestore(user.uid, settings.musicLanguage);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [user?.uid, settings.musicLanguage]);
+
   // Hooks
   const player = usePlayer();
   const library = useLibrary();
@@ -156,10 +179,24 @@ export function App() {
   useEffect(() => {
     db.getSetting<AppSettings>('celestial_settings', settings).then((saved) => {
       if (saved) {
-        setSettings(saved);
+        setSettings({
+          ...settings,
+          ...saved,
+          musicLanguage: Object.prototype.hasOwnProperty.call(saved, 'musicLanguage')
+            ? saved.musicLanguage
+            : loadMusicLanguagePreference(),
+        });
       } else {
         db.getSetting<AppSettings>('luma_settings', settings).then((oldSaved) => {
-          if (oldSaved) setSettings(oldSaved);
+          if (oldSaved) {
+            setSettings({
+              ...settings,
+              ...oldSaved,
+              musicLanguage: Object.prototype.hasOwnProperty.call(oldSaved, 'musicLanguage')
+                ? oldSaved.musicLanguage
+                : loadMusicLanguagePreference(),
+            });
+          }
         });
       }
     });
@@ -242,9 +279,15 @@ export function App() {
   const updateSettings = (newSettings: Partial<AppSettings>) => {
     setSettings((prev) => {
       const updated = { ...prev, ...newSettings };
+      if (Object.prototype.hasOwnProperty.call(newSettings, 'musicLanguage')) {
+        saveMusicLanguagePreference(newSettings.musicLanguage);
+      }
       db.saveSetting('celestial_settings', updated);
       return updated;
     });
+    if (Object.prototype.hasOwnProperty.call(newSettings, 'musicLanguage') && user) {
+      void syncMusicLanguageToFirestore(user.uid, newSettings.musicLanguage || null);
+    }
   };
 
   // Navigation handlers
@@ -365,6 +408,7 @@ export function App() {
                 onPlayAlbum={(album) => handlePlayAll(album.tracks)}
                 onPlayPlaylist={(pl) => handlePlayAll(pl.tracks)}
                 onOpenContextMenu={(song) => setContextMenuSong(song)}
+                musicLanguage={settings.musicLanguage}
               />
             )}
 
@@ -373,6 +417,7 @@ export function App() {
                 onNavigate={navigateTo}
                 onPlaySong={handlePlaySong}
                 onOpenContextMenu={(song) => setContextMenuSong(song)}
+                musicLanguage={settings.musicLanguage}
               />
             )}
 

@@ -713,6 +713,16 @@ var init_jioSaavnService = __esm({
 
 // server/services/youtubeMusic.ts
 import { Innertube, Parser, Log } from "youtubei.js";
+function normalizeLanguage(value) {
+  if (!value) return void 0;
+  const normalized = value.trim().toLowerCase();
+  return MUSIC_LANGUAGE_CODES[normalized] || normalized;
+}
+function filterSongsByLanguage(songs, language) {
+  const selectedLanguage = normalizeLanguage(language);
+  if (!selectedLanguage || selectedLanguage === "all") return songs;
+  return songs.filter((song) => normalizeLanguage(song.language) === selectedLanguage);
+}
 function isPlayableSongEntry(song) {
   if (!song) return false;
   const title = String(song.title || "").trim();
@@ -964,7 +974,7 @@ function isTitleTooSimilar(titleA, titleB) {
   const simB = overlap / tokensB.length;
   return simA >= 0.5 || simB >= 0.5;
 }
-var MAX_SONG_DURATION_SECONDS, LYRICS_MATCH_THRESHOLD, PlayerInterstitialNode, InterstitialViewNode, QUICK_PICKS_QUERY_POOL, YouTubeMusicService, youtubeMusicService;
+var MAX_SONG_DURATION_SECONDS, MUSIC_LANGUAGE_CODES, MUSIC_LANGUAGE_NAMES, LYRICS_MATCH_THRESHOLD, PlayerInterstitialNode, InterstitialViewNode, QUICK_PICKS_QUERY_POOL, YouTubeMusicService, youtubeMusicService;
 var init_youtubeMusic = __esm({
   "server/services/youtubeMusic.ts"() {
     init_formatters();
@@ -972,6 +982,59 @@ var init_youtubeMusic = __esm({
     init_jioSaavnService();
     Log.setLevel(Log.Level.NONE);
     MAX_SONG_DURATION_SECONDS = 15 * 60;
+    MUSIC_LANGUAGE_CODES = {
+      assamese: "as",
+      bengali: "bn",
+      bodo: "brx",
+      dogri: "doi",
+      gujarati: "gu",
+      hindi: "hi",
+      kannada: "kn",
+      kashmiri: "ks",
+      konkani: "kok",
+      maithili: "mai",
+      malayalam: "ml",
+      manipuri: "mni",
+      meitei: "mni",
+      marathi: "mr",
+      nepali: "ne",
+      odia: "or",
+      oriya: "or",
+      punjabi: "pa",
+      sanskrit: "sa",
+      santali: "sat",
+      sindhi: "sd",
+      tamil: "ta",
+      telugu: "te",
+      urdu: "ur",
+      english: "en",
+      "manipuri (meitei)": "mni"
+    };
+    MUSIC_LANGUAGE_NAMES = {
+      as: "Assamese",
+      bn: "Bengali",
+      brx: "Bodo",
+      doi: "Dogri",
+      gu: "Gujarati",
+      hi: "Hindi",
+      kn: "Kannada",
+      ks: "Kashmiri",
+      kok: "Konkani",
+      mai: "Maithili",
+      ml: "Malayalam",
+      mni: "Manipuri",
+      mr: "Marathi",
+      ne: "Nepali",
+      or: "Odia",
+      pa: "Punjabi",
+      sa: "Sanskrit",
+      sat: "Santali",
+      sd: "Sindhi",
+      ta: "Tamil",
+      te: "Telugu",
+      ur: "Urdu",
+      en: "English"
+    };
     LYRICS_MATCH_THRESHOLD = 0.62;
     PlayerInterstitialNode = class {
       static {
@@ -1104,7 +1167,8 @@ var init_youtubeMusic = __esm({
           streamUrl: `/api/song/${id}/audio`,
           dominantColor: colors.dominant,
           accentColor: colors.accent,
-          plays: item.views ? parseInt(String(item.views).replace(/[^0-9]/g, ""), 10) || void 0 : void 0
+          plays: item.views ? parseInt(String(item.views).replace(/[^0-9]/g, ""), 10) || void 0 : void 0,
+          language: typeof item.language === "string" && item.language.trim() ? item.language.trim() : void 0
         };
       }
       normalizeAlbum(item) {
@@ -1351,10 +1415,11 @@ var init_youtubeMusic = __esm({
         return [];
       }
       /**
-       * Real Home Feed with automated YouTube Music style recommendations tailored for Tamil music
+       * Live catalog discovery shelves, with strict provider-metadata filtering for selected languages.
        */
-      async getHome(forceRefresh = false, mood) {
-        const cacheKey = `home_${mood || "all"}`;
+      async getHome(forceRefresh = false, mood, language) {
+        const selectedLanguage = normalizeLanguage(language);
+        const cacheKey = `home_${mood || "all"}_${selectedLanguage || "default"}`;
         const cached = this.homeCache.get(cacheKey);
         if (!forceRefresh && cached && cached.expires > Date.now()) {
           return cached.data;
@@ -1362,6 +1427,33 @@ var init_youtubeMusic = __esm({
         const yt = await this.getInnertube();
         if (!yt) {
           throw new Error("Music backend engine currently unavailable");
+        }
+        if (selectedLanguage && selectedLanguage !== "all") {
+          const languageName = MUSIC_LANGUAGE_NAMES[selectedLanguage];
+          if (!languageName) return [];
+          const results = await this.search(`${languageName} songs`, "song", forceRefresh);
+          const songs = filterSongsByLanguage(results.songs, selectedLanguage);
+          const sections2 = songs.length ? [{
+            id: `language-${selectedLanguage}`,
+            title: `${languageName} music`,
+            subtitle: `Songs confirmed as ${languageName} by provider metadata`,
+            type: "song",
+            items: songs
+          }] : [];
+          this.homeCache.set(cacheKey, { data: sections2, expires: Date.now() + 3e5 });
+          return sections2;
+        }
+        if (selectedLanguage === "all") {
+          const results = await this.search("trending music", "song", forceRefresh);
+          const sections2 = results.songs.length ? [{
+            id: "trending-all-languages",
+            title: "Trending music",
+            subtitle: "Provider search results across languages",
+            type: "song",
+            items: results.songs
+          }] : [];
+          this.homeCache.set(cacheKey, { data: sections2, expires: Date.now() + 3e5 });
+          return sections2;
         }
         const sections = [];
         let queries = [];
@@ -1475,7 +1567,7 @@ var init_youtubeMusic = __esm({
         } else {
           queries = [
             quickPicksQueryDef,
-            { id: "tamil-custom", title: "Tamil Music Collection", subtitle: "Curated for you", query: `${mood} Tamil songs`, type: "song" }
+            { id: "tamil-custom", title: "Tamil Music Collection", subtitle: "Provider catalog results", query: `${mood} Tamil songs`, type: "song" }
           ];
         }
         await Promise.all(
@@ -2126,8 +2218,9 @@ var init_youtubeMusic = __esm({
        * Uses YouTube's authentic recommendation graph (watch_next_feed).
        * Filters out redundant/similar title songs and ranks relevant music.
        */
-      async getQueue(songId) {
-        const cached = this.queueCache.get(songId);
+      async getQueue(songId, language) {
+        const cacheKey = `${songId}:${normalizeLanguage(language) || "all"}`;
+        const cached = this.queueCache.get(cacheKey);
         if (cached && cached.expires > Date.now()) {
           return cached.data;
         }
@@ -2164,7 +2257,8 @@ var init_youtubeMusic = __esm({
             try {
               const timeoutHelper = (p, ms) => Promise.race([p.catch(() => null), new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
               const curSong = this.songCache.get(songId)?.data;
-              const query = curSong ? `${curSong.title} ${curSong.artist}` : "Tamil trending hit songs";
+              const selectedLanguage = normalizeLanguage(language);
+              const query = curSong ? `${curSong.title} ${curSong.artist}` : selectedLanguage === "all" ? "trending music" : selectedLanguage ? `${MUSIC_LANGUAGE_NAMES[selectedLanguage] || ""} songs` : "Tamil trending hit songs";
               const fallback = await timeoutHelper(this.search(query, "song"), 3e3);
               if (fallback?.songs) {
                 pool.push(...fallback.songs);
@@ -2175,7 +2269,8 @@ var init_youtubeMusic = __esm({
           const finalQueue = [];
           const seenIds = /* @__PURE__ */ new Set([songId]);
           const acceptedTitles = [];
-          for (const song of pool) {
+          const languageFilteredPool = filterSongsByLanguage(pool, language);
+          for (const song of languageFilteredPool) {
             if (!song || !song.id || seenIds.has(song.id)) continue;
             if (!song.title || song.title === "Unknown Track") continue;
             const isDuplicateTitle = acceptedTitles.some((t) => isTitleTooSimilar(song.title, t));
@@ -2185,7 +2280,7 @@ var init_youtubeMusic = __esm({
             finalQueue.push(song);
             if (finalQueue.length >= 25) break;
           }
-          this.queueCache.set(songId, { data: finalQueue, expires: Date.now() + 36e5 });
+          this.queueCache.set(cacheKey, { data: finalQueue, expires: Date.now() + 36e5 });
           return finalQueue;
         } catch (err) {
           console.error(`getQueue error for ${songId}:`, err.message);
@@ -2521,7 +2616,8 @@ var init_home = __esm({
       try {
         const forceRefresh = req.query.refresh === "true";
         const mood = typeof req.query.mood === "string" ? req.query.mood : void 0;
-        const sections = await youtubeMusicService.getHome(forceRefresh, mood);
+        const language = typeof req.query.language === "string" ? req.query.language : void 0;
+        const sections = await youtubeMusicService.getHome(forceRefresh, mood, language);
         res.json({ sections });
       } catch (err) {
         console.warn("Home route notice, returning empty feed:", err?.message || err);
@@ -3146,8 +3242,9 @@ var init_queue = __esm({
     queueRouter = Router8();
     queueRouter.get("/:id", async (req, res) => {
       const { id } = req.params;
+      const language = typeof req.query.language === "string" ? req.query.language : void 0;
       try {
-        const queue = await youtubeMusicService.getQueue(id);
+        const queue = await youtubeMusicService.getQueue(id, language);
         res.json({ queue });
         if (Array.isArray(queue) && queue.length > 0) {
           for (const item of queue.slice(0, 3)) {
@@ -3397,8 +3494,9 @@ var init_ytmusic = __esm({
     });
     ytmusicRouter.get("/queue/:id", async (req, res) => {
       const { id } = req.params;
+      const language = String(req.query.language || "").trim() || void 0;
       try {
-        const queue = await youtubeMusicService.getQueue(id);
+        const queue = await youtubeMusicService.getQueue(id, language);
         res.json({
           songId: id,
           queue: queue || []

@@ -17,6 +17,7 @@ export interface Song {
   dominantColor?: string; // hex or rgb for artwork-derived gradient
   accentColor?: string;
   genre?: string;
+  language?: string;
   year?: number;
   trackNumber?: number;
   plays?: number;
@@ -147,6 +148,7 @@ export interface MusicProvider {
 }
 
 export interface AppSettings {
+  musicLanguage?: string;
   // Appearance
   appearance: 'system' | 'dark' | 'light';
   reduceAnimation: boolean;

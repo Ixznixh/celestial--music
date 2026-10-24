@@ -3,7 +3,7 @@ import { Song, Album, Artist, Playlist, SearchResults, StreamInfo, HomeSection, 
 export interface MusicProvider {
   id?: string;
   name?: string;
-  search(query: string, filter?: string): Promise<SearchResults>;
+  search(query: string, filter?: string, options?: { signal?: AbortSignal }): Promise<SearchResults>;
   getArtist(id: string): Promise<Artist>;
   getAlbum(id: string): Promise<Album>;
   getSong(id: string): Promise<Song>;
@@ -11,7 +11,7 @@ export interface MusicProvider {
   getStream(id: string): Promise<StreamInfo>;
   getArtwork?(item: Song | Album | Artist | Playlist, size?: 'small' | 'medium' | 'large'): string;
   getLyrics?(songId: string, meta?: { title?: string; artist?: string; duration?: number; album?: string }): Promise<Lyrics | null>;
-  getHomeSections?(forceRefresh?: boolean, mood?: string): Promise<HomeSection[]>;
+  getHomeSections?(forceRefresh?: boolean, mood?: string, language?: string): Promise<HomeSection[]>;
 }
 
 export type { Song, Album, Artist, Playlist, SearchResults, StreamInfo, HomeSection, Lyrics };

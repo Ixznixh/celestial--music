@@ -23,6 +23,7 @@ export interface Song {
   plays?: number;
   dominantColor?: string;
   accentColor?: string;
+  language?: string;
   trackNumber?: number;
   year?: number;
 }

@@ -27,12 +27,12 @@ export class YouTubeMusicProvider implements MusicProvider {
   /**
    * Search Songs, Artists, Albums, and Playlists
    */
-  public async search(query: string, filter?: string): Promise<SearchResults> {
+  public async search(query: string, filter?: string, options?: { signal?: AbortSignal }): Promise<SearchResults> {
     const params: Record<string, string> = { q: query };
     if (filter && filter !== 'all') {
       params.type = filter;
     }
-    return musicApi.get<SearchResults>('/search', params);
+    return musicApi.get<SearchResults>('/search', params, { signal: options?.signal });
   }
 
   /**
@@ -46,9 +46,14 @@ export class YouTubeMusicProvider implements MusicProvider {
     return res && res.sections ? res : { sections: [] };
   }
 
-  public async getHomeSections(): Promise<HomeSection[]> {
-    const data = await this.getHome();
-    return data.sections || [];
+  public async getHomeSections(forceRefresh = false, mood?: string, language?: string): Promise<HomeSection[]> {
+    const params: Record<string, string> = {};
+    if (forceRefresh) params.refresh = 'true';
+    if (mood) params.mood = mood;
+    if (language) params.language = language;
+    const res = await musicApi.get<{ sections: HomeSection[] } | HomeSection[]>('/home', params);
+    if (Array.isArray(res)) return res;
+    return res?.sections || [];
   }
 
   /**

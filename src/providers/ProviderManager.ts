@@ -122,6 +122,9 @@ export class ProviderManager implements MusicProvider {
       this.lastErrorObj = null;
       return result;
     } catch (primaryError: any) {
+      if (primaryError?.name === 'AbortError') {
+        throw primaryError;
+      }
       this.failureCount += 1;
       this.lastErrorObj = primaryError;
       console.warn(`[ProviderManager] YouTube Music API error on "${operationName}":`, primaryError?.message || primaryError);
@@ -203,14 +206,14 @@ export class ProviderManager implements MusicProvider {
 
   // --- MusicProvider Implementation ---
 
-  async search(query: string, filter?: string): Promise<SearchResults> {
+  async search(query: string, filter?: string, options?: { signal?: AbortSignal }): Promise<SearchResults> {
     const trimmed = (query || '').trim();
     if (!trimmed) {
       return { songs: [], artists: [], albums: [], playlists: [] };
     }
 
     const rawResults = await this.executeWithFallback(
-      (p) => p.search(trimmed, filter),
+      (p) => p.search(trimmed, filter, options),
       `search("${trimmed}")`
     );
 
@@ -279,15 +282,15 @@ export class ProviderManager implements MusicProvider {
     );
   }
 
-  async getHomeSections(forceRefresh: boolean = false, mood?: string): Promise<HomeSection[]> {
+  async getHomeSections(forceRefresh: boolean = false, mood?: string, language?: string): Promise<HomeSection[]> {
     const res = await this.executeWithFallback(
       async (p) => {
         if (p.getHomeSections) {
-          return p.getHomeSections(forceRefresh, mood);
+          return p.getHomeSections(forceRefresh, mood, language);
         }
         throw new Error('Provider does not support getHomeSections');
       },
-      `getHomeSections(${forceRefresh ? 'refresh=true' : ''}${mood ? ` mood=${mood}` : ''})`
+      `getHomeSections(${forceRefresh ? 'refresh=true' : ''}${mood ? ` mood=${mood}` : ''}${language ? ` language=${language}` : ''})`
     );
 
     if (Array.isArray(res)) {

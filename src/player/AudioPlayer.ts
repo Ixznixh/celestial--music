@@ -23,6 +23,11 @@
  */
 
 import { Song, PlaybackState, RepeatMode, AppSettings } from '../types';
+import {
+  isCurrentSuggestionResponse,
+  normalizeMusicLanguage,
+  resolveRecommendationLanguage,
+} from '../utils/musicLanguage';
 import { QueueManager } from './QueueManager';
 import { db, isDemoItem } from '../services/indexedDB';
 import { extractYouTubeVideoId, parseDurationInSeconds } from '../utils/formatters';
@@ -62,6 +67,9 @@ export class AudioPlayer {
   private timeUpdateInterval: number | null = null;
   private isFetchingSuggestions = false;
   private lastSuggestedSongId: string | null = null;
+  private suggestionRequestId = 0;
+  private suggestionController: AbortController | null = null;
+  private musicLanguage?: string;
   private crossfadeDuration: number = 0;
   private currentQuality: 'normal' | 'high' | 'lossless' | 'hires' = 'lossless';
   private playbackSessionId = 0;
@@ -1260,6 +1268,9 @@ export class AudioPlayer {
 
   public async playTrack(song: Song, contextQueue?: Song[]): Promise<void> {
     if (!song) return;
+    this.suggestionRequestId++;
+    this.suggestionController?.abort();
+    this.isFetchingSuggestions = false;
 
     // Immediately unlock audio context and wake lock on user touch/click
     backgroundAudioManager.unlockAudioContext().catch(() => {});
@@ -1267,9 +1278,9 @@ export class AudioPlayer {
 
     if (contextQueue && contextQueue.length > 0) {
       const idx = contextQueue.findIndex((s) => s.id === song.id);
-      this.queueManager.setQueue(contextQueue, idx !== -1 ? idx : 0);
+      this.queueManager.setQueue(contextQueue, idx !== -1 ? idx : 0, true);
     } else {
-      this.queueManager.setQueue([song], 0);
+      this.queueManager.setQueue([song], 0, true);
     }
 
     await this.startPlayback(song, 0);
@@ -1284,21 +1295,46 @@ export class AudioPlayer {
 
   public async loadSuggestions(songId?: string, force: boolean = false): Promise<void> {
     const targetId = songId || this.state.currentSong?.id;
-    if (!targetId || this.isFetchingSuggestions) return;
+    if (!targetId) return;
 
+    this.suggestionController?.abort();
+    const controller = new AbortController();
+    this.suggestionController = controller;
+    const requestId = ++this.suggestionRequestId;
+    const currentSong = this.queueManager.getCurrentSong();
+    const songLanguage = currentSong?.id === targetId ? currentSong.language : undefined;
+    const language = resolveRecommendationLanguage(songLanguage, this.musicLanguage);
+    if (language === null) {
+      this.isFetchingSuggestions = false;
+      this.state.isLoadingSuggestions = false;
+      this.notify();
+      return;
+    }
     this.isFetchingSuggestions = true;
     this.lastSuggestedSongId = targetId;
     this.state.isLoadingSuggestions = true;
     this.notify();
 
     try {
-      const res = await fetch(`/api/queue/${targetId}?_t=${Date.now()}`);
+      const params = new URLSearchParams({ _t: Date.now().toString() });
+      if (language) params.set('language', language);
+      const res = await fetch(`/api/queue/${encodeURIComponent(targetId)}?${params}`, { signal: controller.signal });
       if (!res.ok) return;
       const data = await res.json();
       const suggestions: Song[] = data.queue || [];
 
+      if (!isCurrentSuggestionResponse(
+        requestId,
+        this.suggestionRequestId,
+        targetId,
+        this.queueManager.getCurrentSong()?.id
+      )) return;
+
       if (Array.isArray(suggestions) && suggestions.length > 0) {
-        const filtered = suggestions.filter((s) => s.id !== targetId);
+        const filtered = suggestions.filter((s) =>
+          s.id !== targetId &&
+          (!language || normalizeMusicLanguage(s.language) === normalizeMusicLanguage(language))
+        );
 
         if (force) {
           this.queueManager.setAutoplayQueue(filtered);
@@ -1313,11 +1349,15 @@ export class AudioPlayer {
         this.preloadNextTrack();
       }
     } catch (err) {
-      console.warn('[AudioPlayer] Failed to load suggestions:', err);
+      if ((err as Error)?.name !== 'AbortError') {
+        console.warn('[AudioPlayer] Failed to load suggestions:', err);
+      }
     } finally {
-      this.isFetchingSuggestions = false;
-      this.state.isLoadingSuggestions = false;
-      this.notify();
+      if (requestId === this.suggestionRequestId) {
+        this.isFetchingSuggestions = false;
+        this.state.isLoadingSuggestions = false;
+        this.notify();
+      }
     }
   }
 
@@ -1651,6 +1691,14 @@ export class AudioPlayer {
     }
     if (settings.audioQuality) {
       this.currentQuality = settings.audioQuality;
+    }
+    if (settings.musicLanguage !== this.musicLanguage) {
+      this.musicLanguage = settings.musicLanguage;
+      this.suggestionRequestId++;
+      this.suggestionController?.abort();
+      this.queueManager.clearAutoplayQueue();
+      const currentSong = this.queueManager.getCurrentSong();
+      if (currentSong) void this.loadSuggestions(currentSong.id);
     }
     if (typeof settings.lowPowerMode === 'boolean') {
       this.setLowPowerMode(settings.lowPowerMode);

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { isPlayableSongEntry } from '../youtubeMusic';
+import { filterSongsByLanguage, isPlayableSongEntry, youtubeMusicService } from '../youtubeMusic';
+import { Song } from '../../types/music';
 
 describe('Home feed — playable song filtering', () => {
   it('keeps ordinary tracks', () => {
@@ -14,6 +15,37 @@ describe('Home feed — playable song filtering', () => {
         duration: 261,
       })
     ).toBe(true);
+  });
+
+  describe('provider metadata language filtering', () => {
+    it('preserves an explicit provider language field and does not infer one from text', () => {
+      expect(youtubeMusicService.normalizeSong({
+        id: 'provider-tagged',
+        title: 'Hindi Song',
+        language: 'Tamil',
+      }).language).toBe('Tamil');
+      expect(youtubeMusicService.normalizeSong({
+        id: 'provider-untagged',
+        title: 'Hindi Song',
+      }).language).toBeUndefined();
+    });
+
+    it('filters only tracks with a confirmed matching language label', () => {
+      const makeSong = (id: string, language?: string): Song => ({
+        id,
+        title: id,
+        artists: '',
+        album: '',
+        albumId: '',
+        artwork: '',
+        duration: 180,
+        provider: 'youtube',
+        language,
+      });
+      const songs = [makeSong('hi', 'Hindi'), makeSong('bn', 'Bengali'), makeSong('unknown')];
+      expect(filterSongsByLanguage(songs, 'hi').map(({ id }) => id)).toEqual(['hi']);
+      expect(filterSongsByLanguage(songs, 'all')).toHaveLength(3);
+    });
   });
 
   it('drops compilation uploads by length', () => {
