@@ -117,30 +117,6 @@ export function subscribeToAuth(callback: (user: User | null) => void) {
 
 /* ----------------- FIRESTORE SYNC HELPERS ----------------- */
 
-export async function fetchMusicLanguageFromFirestore(userId: string): Promise<string | undefined> {
-  if (!userId || isFirestoreQuotaExhausted) return undefined;
-  try {
-    const profile = await getDoc(doc(db, 'users', userId));
-    const language = profile.data()?.musicLanguage;
-    return typeof language === 'string' ? language : undefined;
-  } catch (err: any) {
-    handleFirestoreError(err, 'music language fetch');
-    return undefined;
-  }
-}
-
-export async function syncMusicLanguageToFirestore(userId: string, language: string | null): Promise<void> {
-  if (!userId || isFirestoreQuotaExhausted) return;
-  try {
-    await setDoc(doc(db, 'users', userId), {
-      musicLanguage: language,
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
-  } catch (err: any) {
-    handleFirestoreError(err, 'music language sync');
-  }
-}
-
 // Sync User Favorites with Firestore
 export async function syncFavoriteToFirestore(userId: string, song: Song, isFavorite: boolean): Promise<void> {
   if (!userId || isFirestoreQuotaExhausted) return;

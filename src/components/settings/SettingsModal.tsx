@@ -47,7 +47,6 @@ import { GlassSwitch } from '../common/GlassSwitch';
 import { SourcesModal } from './SourcesModal';
 import { ReplayModal } from './ReplayModal';
 import { EqualizerModal } from './EqualizerModal';
-import { MUSIC_LANGUAGES } from '../../utils/musicLanguage';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -189,41 +188,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               {/* Scrollable content matching all screenshots */}
               <div className="flex-1 overflow-y-auto no-scrollbar p-4 sm:p-5 space-y-6">
-
-                {/* Music recommendation language */}
-                <div>
-                  <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider block mb-2 px-1">
-                    Music
-                  </span>
-                  <div className="bg-white/[0.03] rounded-2xl border border-white/10 overflow-hidden shadow-sm">
-                    <div className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <Languages className="w-4.5 h-4.5 text-neutral-400" />
-                        <div>
-                          <p className="text-sm font-medium text-white">Music Language</p>
-                          <p className="text-xs text-neutral-400">Recommendations only; this does not change the interface language.</p>
-                        </div>
-                      </div>
-                      <select
-                        aria-label="Music Language"
-                        value={settings.musicLanguage || 'current-default'}
-                        onChange={(e) => onUpdateSettings({
-                          musicLanguage: e.target.value === 'current-default' ? undefined : e.target.value,
-                        })}
-                        className="bg-neutral-900 border border-neutral-800 rounded-lg text-xs font-medium text-white px-2.5 py-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
-                      >
-                        <option value="current-default">Current default (Tamil recommendations)</option>
-                        <option value="all">All languages</option>
-                        {MUSIC_LANGUAGES.map(({ code, label }) => (
-                          <option key={code} value={code}>{label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <p className="px-3.5 pb-3 text-[11px] leading-relaxed text-neutral-500">
-                      Language filtering requires provider-supplied song language metadata. The current YouTube Music catalog does not provide it consistently, so some language-filtered shelves and radio queues may be empty rather than show unrelated tracks.
-                    </p>
-                  </div>
-                </div>
 
                 {/* 1. AUDIO QUALITY */}
                 <div>

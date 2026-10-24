@@ -14,7 +14,7 @@ export class RealMusicProvider implements MusicProvider {
   public id = 'real-music-provider';
   public name = 'Pure YouTube API (Backend Provider)';
 
-  async search(query: string, filter?: string, options?: { signal?: AbortSignal }): Promise<SearchResults> {
+  async search(query: string, filter?: string): Promise<SearchResults> {
     const trimmed = (query || '').trim();
     if (!trimmed) {
       return { songs: [], artists: [], albums: [], playlists: [] };
@@ -25,7 +25,7 @@ export class RealMusicProvider implements MusicProvider {
       params.filter = filter;
     }
 
-    const data = await musicApi.get<SearchResults>('/search', params, { signal: options?.signal });
+    const data = await musicApi.get<SearchResults>('/search', params);
     return {
       songs: data.songs || [],
       artists: data.artists || [],
@@ -76,11 +76,10 @@ export class RealMusicProvider implements MusicProvider {
     }
   }
 
-  async getHomeSections(forceRefresh: boolean = true, mood?: string, language?: string): Promise<HomeSection[]> {
+  async getHomeSections(forceRefresh: boolean = true, mood?: string): Promise<HomeSection[]> {
     const params: Record<string, string | undefined> = {};
     if (forceRefresh) params.refresh = 'true';
     if (mood) params.mood = mood;
-    if (language) params.language = language;
     params._t = Date.now().toString();
 
     const res = await musicApi.get<{ sections: HomeSection[] } | HomeSection[]>('/home', params);

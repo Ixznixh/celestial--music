@@ -115,7 +115,7 @@ export class QueueManager {
   /**
    * Start a new queue context (e.g. user clicked a playlist, album, or single song)
    */
-  public setQueue(songs: Song[], startIndex: number = 0, preserveUserQueue = false): Song | null {
+  public setQueue(songs: Song[], startIndex: number = 0): Song | null {
     if (!songs || songs.length === 0) {
       this.clearAll();
       return null;
@@ -149,12 +149,7 @@ export class QueueManager {
       this.contextQueue = filteredRemaining;
     }
 
-    if (preserveUserQueue) {
-      const currentAndContextIds = new Set([this.currentSong.id, ...this.contextQueue.map((song) => song.id)]);
-      this.userQueue = this.userQueue.filter((song) => !currentAndContextIds.has(song.id));
-    } else {
-      this.userQueue = [];
-    }
+    this.userQueue = [];
     this.autoplayQueue = [];
     this.persistToStorage();
     return this.currentSong;
@@ -220,7 +215,6 @@ export class QueueManager {
 
       accepted.push(song);
       existingTitles.push(song.title);
-      excludeIds.add(song.id);
     }
 
     this.autoplayQueue = accepted;

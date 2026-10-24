@@ -166,9 +166,8 @@ ytmusicRouter.get('/lyrics/:id', async (req: Request, res: Response) => {
 // GET /api/ytmusic/queue/:id
 ytmusicRouter.get('/queue/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
-  const language = String(req.query.language || '').trim() || undefined;
   try {
-    const queue = await youtubeMusicService.getQueue(id, language);
+    const queue = await youtubeMusicService.getQueue(id);
     res.json({
       songId: id,
       queue: queue || [],

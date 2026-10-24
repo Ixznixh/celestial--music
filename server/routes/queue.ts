@@ -6,9 +6,8 @@ export const queueRouter = Router();
 // GET /api/queue/:id
 queueRouter.get('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
-  const language = typeof req.query.language === 'string' ? req.query.language : undefined;
   try {
-    const queue = await youtubeMusicService.getQueue(id, language);
+    const queue = await youtubeMusicService.getQueue(id);
     res.json({ queue });
 
     // Asynchronously prewarm upcoming tracks in queue via YouTube Music API

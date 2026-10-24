@@ -5,7 +5,6 @@ import { usePlayer } from '../hooks/usePlayer';
 import { useLongPress } from '../hooks/useLongPress';
 import { ArtworkImage } from '../components/common/ArtworkImage';
 import { isDemoItem } from '../services/indexedDB';
-import { MUSIC_LANGUAGES } from '../utils/musicLanguage';
 import { User } from 'firebase/auth';
 import {
   Play,
@@ -48,7 +47,7 @@ interface HomePageProps {
 
 type MoodFilter = 'all' | 'trending' | 'melody' | 'kuthu' | 'anirudh' | 'rahman' | 'yuvan' | 'classics' | 'chill';
 
-const CACHE_KEY = 'celestial_music_home_feed_cache';
+const CACHE_KEY = 'celestial_ytmusic_tamil_home_feed_cache';
 const LAST_SYNC_KEY = 'celestial_ytmusic_tamil_last_sync';
 
 export const HomePage: React.FC<HomePageProps> = ({
@@ -66,13 +65,12 @@ export const HomePage: React.FC<HomePageProps> = ({
   settings,
 }) => {
   const player = usePlayer();
-  const cacheKey = `${CACHE_KEY}:${settings?.musicLanguage || 'current-default'}`;
 
   const cleanFavorites = favoriteSongs.filter((s) => !isDemoItem(s));
 
   const [sections, setSections] = useState<HomeSection[]>(() => {
     try {
-      const cached = sessionStorage.getItem(cacheKey);
+      const cached = sessionStorage.getItem(CACHE_KEY);
       if (cached) {
         const parsed = JSON.parse(cached) as HomeSection[];
         return parsed.map((sec) => {
@@ -104,8 +102,6 @@ export const HomePage: React.FC<HomePageProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   const lastFetchRef = useRef<number>(0);
-  const homeRequestRef = useRef(0);
-  const lastFetchSignatureRef = useRef('');
 
   const updateSyncLabel = () => {
     const last = parseInt(sessionStorage.getItem(LAST_SYNC_KEY) || '0', 10);
@@ -125,11 +121,8 @@ export const HomePage: React.FC<HomePageProps> = ({
    */
   const loadHomeData = useCallback(async (forceRefresh = true, mood: MoodFilter = 'all') => {
     const now = Date.now();
-    const signature = `${mood}:${settings?.musicLanguage || 'current-default'}`;
-    if (signature === lastFetchSignatureRef.current && now - lastFetchRef.current < 400) return;
+    if (now - lastFetchRef.current < 400) return;
     lastFetchRef.current = now;
-    lastFetchSignatureRef.current = signature;
-    const requestId = ++homeRequestRef.current;
 
     if (sections.length === 0) {
       setIsLoading(true);
@@ -141,8 +134,7 @@ export const HomePage: React.FC<HomePageProps> = ({
     try {
       const provider = providerManager.getActiveProvider();
       const moodParam = mood !== 'all' ? mood : undefined;
-      const loadedSections = await provider.getHomeSections(forceRefresh, moodParam, settings?.musicLanguage);
-      if (requestId !== homeRequestRef.current) return;
+      const loadedSections = await provider.getHomeSections(forceRefresh, moodParam);
 
       let rawSections: HomeSection[] = [];
       if (Array.isArray(loadedSections)) {
@@ -172,21 +164,19 @@ export const HomePage: React.FC<HomePageProps> = ({
         .filter((sec) => sec.items.length > 0);
 
       setSections(sanitizedSections);
-      sessionStorage.setItem(cacheKey, JSON.stringify(sanitizedSections));
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify(sanitizedSections));
       sessionStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
       updateSyncLabel();
     } catch (e: any) {
       console.warn('Home data refresh error:', e?.message || e);
-      if (requestId === homeRequestRef.current && sections.length === 0) {
+      if (sections.length === 0) {
         setError('Music service is temporarily reconnecting. Tap to retry.');
       }
     } finally {
-      if (requestId === homeRequestRef.current) {
-        setIsLoading(false);
-        setIsRefreshing(false);
-      }
+      setIsLoading(false);
+      setIsRefreshing(false);
     }
-  }, [sections.length, settings?.musicLanguage, cacheKey]);
+  }, [sections.length]);
 
   /**
    * Auto-Refresh on mount and mood changes
@@ -201,9 +191,8 @@ export const HomePage: React.FC<HomePageProps> = ({
 
     return () => {
       clearInterval(clockTimer);
-      homeRequestRef.current++;
     };
-  }, [activeMood, loadHomeData, settings?.lowPowerMode, settings?.musicLanguage]);
+  }, [activeMood, loadHomeData, settings?.lowPowerMode]);
 
   const handleMoodSelect = (mood: MoodFilter) => {
     setActiveMood(mood);
@@ -300,7 +289,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         <div className="p-4 rounded-2xl bg-gradient-to-r from-neutral-900 via-neutral-900/90 to-neutral-900/60 border border-white/10 flex items-center justify-between gap-3 shadow-xl">
           <div className="min-w-0">
             <h3 className="text-sm font-bold text-white">Sign in to YouTube Music</h3>
-            <p className="text-xs text-neutral-400 mt-0.5 truncate">Sign in to sync your account and library across devices</p>
+            <p className="text-xs text-neutral-400 mt-0.5 truncate">Get personalized recommendations for your taste</p>
           </div>
           <button
             onClick={onOpenAccountModal}
@@ -375,23 +364,6 @@ export const HomePage: React.FC<HomePageProps> = ({
               ))}
             </div>
           </div>
-        </div>
-      )}
-
-      {!isLoading && !error && sections.length === 0 && settings?.musicLanguage && settings.musicLanguage !== 'all' && (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-center">
-          <p className="font-semibold text-white">
-            No verified {MUSIC_LANGUAGES.find(({ code }) => code === settings.musicLanguage)?.label || ''} recommendations yet
-          </p>
-          <p className="mt-1 text-xs text-neutral-400">
-            YouTube Music did not provide reliable language metadata for these tracks. Unrelated songs are hidden; try searching for a specific song or change Music Language in Settings.
-          </p>
-          <button
-            onClick={() => loadHomeData(true, activeMood)}
-            className="mt-3 rounded-full bg-white/10 px-3 py-1.5 text-xs text-white hover:bg-white/15"
-          >
-            Retry
-          </button>
         </div>
       )}
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Compass, 
   Flame, 
@@ -23,7 +23,6 @@ import { Song, Album, Artist, Playlist, AppView } from '../types';
 import { providerManager } from '../services/providerManager';
 import { ArtworkImage } from '../components/common/ArtworkImage';
 import { PlaylistThumbnail } from '../components/common/PlaylistThumbnail';
-import { MUSIC_LANGUAGES, filterSongsByLanguage } from '../utils/musicLanguage';
 
 interface ExplorePageProps {
   onNavigate: (view: AppView) => void;
@@ -31,7 +30,6 @@ interface ExplorePageProps {
   onPlayAlbum: (album: Album) => void;
   onPlayPlaylist: (playlist: Playlist) => void;
   onOpenContextMenu: (song: Song) => void;
-  musicLanguage?: string;
 }
 
 const MOODS = [
@@ -51,44 +49,30 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
   onPlayAlbum,
   onPlayPlaylist,
   onOpenContextMenu,
-  musicLanguage,
 }) => {
   const [selectedMood, setSelectedMood] = useState<string>('trending');
   const [exploreSongs, setExploreSongs] = useState<Song[]>([]);
   const [trendingAlbums, setTrendingAlbums] = useState<Album[]>([]);
   const [topPlaylists, setTopPlaylists] = useState<Playlist[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const requestRef = useRef<AbortController | null>(null);
 
   const fetchExploreData = async (mood: string) => {
-    requestRef.current?.abort();
-    const controller = new AbortController();
-    requestRef.current = controller;
     setIsLoading(true);
-    setError(false);
     try {
-      const languageName = MUSIC_LANGUAGES.find(({ code }) => code === musicLanguage)?.label;
-      const query = languageName ? `${languageName} ${mood} music` : `${mood} music`;
-      const res = await providerManager.search(query, undefined, { signal: controller.signal });
-      if (controller.signal.aborted) return;
-      setExploreSongs(filterSongsByLanguage(res.songs, musicLanguage).slice(0, 16));
-      setTrendingAlbums(musicLanguage && musicLanguage !== 'all' ? [] : res.albums.slice(0, 8));
-      setTopPlaylists(musicLanguage && musicLanguage !== 'all' ? [] : res.playlists.slice(0, 8));
+      const res = await providerManager.search(`${mood} music`);
+      setExploreSongs(res.songs.slice(0, 16));
+      setTrendingAlbums(res.albums.slice(0, 8));
+      setTopPlaylists(res.playlists.slice(0, 8));
     } catch (err) {
-      if (!controller.signal.aborted) {
-        console.error('Failed to load explore data:', err);
-        setError(true);
-      }
+      console.error('Failed to load explore data:', err);
     } finally {
-      if (!controller.signal.aborted) setIsLoading(false);
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
     fetchExploreData(selectedMood);
-    return () => requestRef.current?.abort();
-  }, [selectedMood, musicLanguage]);
+  }, [selectedMood]);
 
   return (
     <div className="pb-32 pt-4 px-4 sm:px-6 md:px-8 max-w-[1600px] mx-auto space-y-8">
@@ -134,23 +118,6 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
           );
         })}
       </div>
-
-      {!isLoading && error && (
-        <div className="rounded-xl border border-rose-900/60 bg-rose-950/30 p-4 text-sm text-rose-200">
-          Could not load discovery right now.
-          <button onClick={() => fetchExploreData(selectedMood)} className="ml-3 underline">Retry</button>
-        </div>
-      )}
-      {!isLoading && !error && exploreSongs.length === 0 && musicLanguage && musicLanguage !== 'all' && (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-center">
-          <p className="font-semibold text-white">
-            No verified {MUSIC_LANGUAGES.find(({ code }) => code === musicLanguage)?.label || ''} tracks available
-          </p>
-          <p className="mt-1 text-xs text-neutral-400">
-            The provider did not return reliable language metadata for this catalog query. Try again later or search for a specific track.
-          </p>
-        </div>
-      )}
 
       {/* Trending Songs Section */}
       <div className="space-y-3">

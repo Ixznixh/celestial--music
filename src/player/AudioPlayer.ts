@@ -23,13 +23,7 @@
  */
 
 import { Song, PlaybackState, RepeatMode, AppSettings } from '../types';
-import {
-  isCurrentSuggestionResponse,
-  normalizeMusicLanguage,
-  resolveRecommendationLanguage,
-} from '../utils/musicLanguage';
 import { QueueManager } from './QueueManager';
-import { loadPlaybackSession, savePlaybackSession } from './PlaybackSessionPersistence';
 import { db, isDemoItem } from '../services/indexedDB';
 import { extractYouTubeVideoId, parseDurationInSeconds } from '../utils/formatters';
 import { diagnostics } from './PlaybackDiagnostics';
@@ -41,6 +35,7 @@ import {
   applyLockScreenMetadata,
 } from './AudioSession';
 
+const STORAGE_STATE_KEY = 'celestial_player_playback_state';
 const SILENT_AUDIO_DATA_URI =
   'data:audio/wav;base64,UklGRjIAAABXQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAAABmYWN0BAAAAAAAAABkYXRhAAAAAA==';
 
@@ -67,9 +62,6 @@ export class AudioPlayer {
   private timeUpdateInterval: number | null = null;
   private isFetchingSuggestions = false;
   private lastSuggestedSongId: string | null = null;
-  private suggestionRequestId = 0;
-  private suggestionController: AbortController | null = null;
-  private musicLanguage?: string;
   private crossfadeDuration: number = 0;
   private currentQuality: 'normal' | 'high' | 'lossless' | 'hires' = 'lossless';
   private playbackSessionId = 0;
@@ -381,8 +373,6 @@ export class AudioPlayer {
       }
 
       if (document.visibilityState === 'hidden') {
-        this.persistPlaybackPosition();
-        this.persistSession();
         // Screen locked / app switched: keep the OS media session owned by us and never
         // touch the YouTube iframe (WebKit suspends iframe media in the background).
         claimPlaybackAudioSession();
@@ -431,31 +421,6 @@ export class AudioPlayer {
         this.notify();
       }
     });
-
-    // Mobile browsers may suspend or discard a backgrounded page shortly after playback
-    // is paused. Persist synchronously at lifecycle boundaries so a fresh launch restores
-    // the paused track and position instead of depending on throttled timers.
-    const persistBeforeSuspension = () => {
-      this.persistPlaybackPosition();
-      this.persistSession();
-    };
-    window.addEventListener('pagehide', persistBeforeSuspension);
-    window.addEventListener('beforeunload', persistBeforeSuspension);
-    document.addEventListener('freeze', persistBeforeSuspension);
-  }
-
-  private persistPlaybackPosition(): void {
-    if (!this.isYTActive && this.audio && Number.isFinite(this.audio.currentTime)) {
-      this.state.currentTime = this.audio.currentTime;
-      if (Number.isFinite(this.audio.duration) && this.audio.duration > 0) {
-        this.state.duration = this.audio.duration;
-      }
-    } else if (this.isYTActive && this.ytPlayer && typeof this.ytPlayer.getCurrentTime === 'function') {
-      try {
-        const currentTime = this.ytPlayer.getCurrentTime();
-        if (Number.isFinite(currentTime) && currentTime >= 0) this.state.currentTime = currentTime;
-      } catch {}
-    }
   }
 
   public setLowPowerMode(enabled: boolean): void {
@@ -669,7 +634,6 @@ export class AudioPlayer {
      */
     el.addEventListener('pause', () => {
       if (this.isYTActive || this.isSwitchingSource) return;
-      this.persistPlaybackPosition();
 
       if (this.intendedPlayState) {
         this.intendedPlayState = false;
@@ -681,7 +645,6 @@ export class AudioPlayer {
       this.updateMediaSessionPlaybackState('paused');
       this.updateMediaSessionPosition(true);
       this.updateMediaSessionHandlers();
-      this.persistSession();
       this.notify();
     });
 
@@ -1297,9 +1260,6 @@ export class AudioPlayer {
 
   public async playTrack(song: Song, contextQueue?: Song[]): Promise<void> {
     if (!song) return;
-    this.suggestionRequestId++;
-    this.suggestionController?.abort();
-    this.isFetchingSuggestions = false;
 
     // Immediately unlock audio context and wake lock on user touch/click
     backgroundAudioManager.unlockAudioContext().catch(() => {});
@@ -1307,9 +1267,9 @@ export class AudioPlayer {
 
     if (contextQueue && contextQueue.length > 0) {
       const idx = contextQueue.findIndex((s) => s.id === song.id);
-      this.queueManager.setQueue(contextQueue, idx !== -1 ? idx : 0, true);
+      this.queueManager.setQueue(contextQueue, idx !== -1 ? idx : 0);
     } else {
-      this.queueManager.setQueue([song], 0, true);
+      this.queueManager.setQueue([song], 0);
     }
 
     await this.startPlayback(song, 0);
@@ -1324,46 +1284,21 @@ export class AudioPlayer {
 
   public async loadSuggestions(songId?: string, force: boolean = false): Promise<void> {
     const targetId = songId || this.state.currentSong?.id;
-    if (!targetId) return;
+    if (!targetId || this.isFetchingSuggestions) return;
 
-    this.suggestionController?.abort();
-    const controller = new AbortController();
-    this.suggestionController = controller;
-    const requestId = ++this.suggestionRequestId;
-    const currentSong = this.queueManager.getCurrentSong();
-    const songLanguage = currentSong?.id === targetId ? currentSong.language : undefined;
-    const language = resolveRecommendationLanguage(songLanguage, this.musicLanguage);
-    if (language === null) {
-      this.isFetchingSuggestions = false;
-      this.state.isLoadingSuggestions = false;
-      this.notify();
-      return;
-    }
     this.isFetchingSuggestions = true;
     this.lastSuggestedSongId = targetId;
     this.state.isLoadingSuggestions = true;
     this.notify();
 
     try {
-      const params = new URLSearchParams({ _t: Date.now().toString() });
-      if (language) params.set('language', language);
-      const res = await fetch(`/api/queue/${encodeURIComponent(targetId)}?${params}`, { signal: controller.signal });
+      const res = await fetch(`/api/queue/${targetId}?_t=${Date.now()}`);
       if (!res.ok) return;
       const data = await res.json();
       const suggestions: Song[] = data.queue || [];
 
-      if (!isCurrentSuggestionResponse(
-        requestId,
-        this.suggestionRequestId,
-        targetId,
-        this.queueManager.getCurrentSong()?.id
-      )) return;
-
       if (Array.isArray(suggestions) && suggestions.length > 0) {
-        const filtered = suggestions.filter((s) =>
-          s.id !== targetId &&
-          (!language || normalizeMusicLanguage(s.language) === normalizeMusicLanguage(language))
-        );
+        const filtered = suggestions.filter((s) => s.id !== targetId);
 
         if (force) {
           this.queueManager.setAutoplayQueue(filtered);
@@ -1378,15 +1313,11 @@ export class AudioPlayer {
         this.preloadNextTrack();
       }
     } catch (err) {
-      if ((err as Error)?.name !== 'AbortError') {
-        console.warn('[AudioPlayer] Failed to load suggestions:', err);
-      }
+      console.warn('[AudioPlayer] Failed to load suggestions:', err);
     } finally {
-      if (requestId === this.suggestionRequestId) {
-        this.isFetchingSuggestions = false;
-        this.state.isLoadingSuggestions = false;
-        this.notify();
-      }
+      this.isFetchingSuggestions = false;
+      this.state.isLoadingSuggestions = false;
+      this.notify();
     }
   }
 
@@ -1433,7 +1364,6 @@ export class AudioPlayer {
   }
 
   public pause(callerDescription = 'User interaction / UI control'): void {
-    this.persistPlaybackPosition();
     this.playbackSessionId++;
     this.intendedPlayState = false;
     diagnostics.recordExplicitPause(callerDescription);
@@ -1722,14 +1652,6 @@ export class AudioPlayer {
     if (settings.audioQuality) {
       this.currentQuality = settings.audioQuality;
     }
-    if (settings.musicLanguage !== this.musicLanguage) {
-      this.musicLanguage = settings.musicLanguage;
-      this.suggestionRequestId++;
-      this.suggestionController?.abort();
-      this.queueManager.clearAutoplayQueue();
-      const currentSong = this.queueManager.getCurrentSong();
-      if (currentSong) void this.loadSuggestions(currentSong.id);
-    }
     if (typeof settings.lowPowerMode === 'boolean') {
       this.setLowPowerMode(settings.lowPowerMode);
     }
@@ -1924,12 +1846,12 @@ export class AudioPlayer {
     try {
       const payload = {
         currentSong: this.state.currentSong,
-        currentTime: Math.round(this.state.currentTime * 10) / 10,
+        currentTime: Math.round(this.state.currentTime),
         duration: Math.round(this.state.duration),
         volume: this.state.volume,
         isMuted: this.state.isMuted,
       };
-      savePlaybackSession(payload);
+      localStorage.setItem(STORAGE_STATE_KEY, JSON.stringify(payload));
 
       const upcomingTracks = this.queueManager.getUpcomingTracks();
       const nextSong = upcomingTracks.length > 0 ? upcomingTracks[0] : null;
@@ -1944,23 +1866,20 @@ export class AudioPlayer {
 
   private async restoreSession(): Promise<void> {
     try {
-      const saved = loadPlaybackSession();
+      const saved = localStorage.getItem(STORAGE_STATE_KEY);
       if (saved) {
-        if (saved.currentSong && !isDemoItem(saved.currentSong)) {
-          const queuedSong = this.queueManager.getCurrentSong();
-          const queueIsNewer = queuedSong && queuedSong.id !== saved.currentSong.id;
-          this.state.currentSong = queueIsNewer ? queuedSong : saved.currentSong;
-          this.state.currentTime = queueIsNewer ? 0 : saved.currentTime;
-          this.state.duration = queueIsNewer
-            ? queuedSong.duration || 180
-            : saved.duration || saved.currentSong.duration || 180;
-          this.state.volume = saved.volume;
-          this.state.isMuted = saved.isMuted;
+        const parsed = JSON.parse(saved);
+        if (parsed.currentSong && !isDemoItem(parsed.currentSong)) {
+          this.state.currentSong = parsed.currentSong;
+          this.state.currentTime = parsed.currentTime || 0;
+          this.state.duration = parsed.duration || parsed.currentSong.duration || 180;
+          this.state.volume = typeof parsed.volume === 'number' ? parsed.volume : 0.85;
+          this.state.isMuted = Boolean(parsed.isMuted);
           this.audio.volume = this.state.isMuted ? 0 : this.state.volume;
           this.updateMediaSessionMetadata(this.state.currentSong);
           this.updateMediaSessionPlaybackState('paused');
-        } else if (saved.currentSong && isDemoItem(saved.currentSong)) {
-          localStorage.removeItem('celestial_player_playback_state');
+        } else if (parsed.currentSong && isDemoItem(parsed.currentSong)) {
+          localStorage.removeItem(STORAGE_STATE_KEY);
         }
       }
 
@@ -1986,9 +1905,6 @@ export class AudioPlayer {
           this.updateMediaSessionPlaybackState('paused');
         }
       }
-      this.state.isPlaying = false;
-      this.intendedPlayState = false;
-      this.notify();
     } catch {}
   }
 }
