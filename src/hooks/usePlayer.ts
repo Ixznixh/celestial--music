@@ -39,14 +39,11 @@ export function usePlayer() {
   }, []);
 
   const togglePlay = useCallback(() => {
-    if (state.isPlaying) {
-      backgroundAudioManager.stopPlaybackAnchor();
-      return audioEngine.pause();
-    } else {
-      backgroundAudioManager.startPlaybackAnchor(state.currentSong);
-      return audioEngine.play();
-    }
-  }, [state.isPlaying, state.currentSong]);
+    // The engine decides from the media element itself: after iOS pauses the element while
+    // the app is suspended, state.isPlaying can be stale and the button would toggle into
+    // a pause that does nothing until the app is reopened.
+    return audioEngine.togglePlay();
+  }, []);
 
   const seek = useCallback((time: number) => audioEngine.seek(time), []);
   const playNextTrack = useCallback(() => audioEngine.playNextTrack(), []);

@@ -82,6 +82,8 @@ export class AudioPlayer {
   private lastProgressAt = Date.now();
   private lastObservedTime = 0;
   private stallRecoveryCount = 0;
+  private resumeCheckTimer: number | null = null;
+  private resumeRecoveryCount = 0;
   private recoveringStream = false;
   private preparingTrackIds = new Set<string>();
   private warmedStreamUrl: string | null = null;
@@ -388,7 +390,7 @@ export class AudioPlayer {
           // Recover an element that WebKit paused while backgrounding (audio session
           // still holds the unlock, so this is allowed without a new gesture).
           if (!this.isYTActive && this.audio && this.audio.paused && this.audio.getAttribute('src')) {
-            this.audio.play().catch(() => {});
+            this.resumeNativePipeline();
           }
         }
       } else if (document.visibilityState === 'visible') {
@@ -414,8 +416,9 @@ export class AudioPlayer {
           if (this.isYTActive && this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
             try { this.ytPlayer.playVideo(); } catch {}
           } else if (this.audio && this.audio.paused && this.audio.getAttribute('src')) {
-            // Playback was suspended while backgrounded — resume it.
-            this.audio.play().catch(() => {});
+            // Playback was suspended while backgrounded — resume it, re-opening the stream
+            // when iOS has already released the media resource while we were paused.
+            this.resumeNativePipeline();
           }
         }
         this.notify();
@@ -614,7 +617,12 @@ export class AudioPlayer {
       this.endSourceSwitch();
       this.nativeRetryCount = 0;
       this.consecutiveTrackFailures = 0;
+      this.resumeRecoveryCount = 0;
       this.recoveringStream = false;
+      if (this.resumeCheckTimer !== null) {
+        window.clearTimeout(this.resumeCheckTimer);
+        this.resumeCheckTimer = null;
+      }
       this.lastProgressAt = Date.now();
       this.state.isPlaying = true;
       this.state.isBuffering = false;
@@ -870,6 +878,7 @@ export class AudioPlayer {
     // so a run of unplayable tracks still trips the circuit breaker).
     this.nativeRetryCount = 0;
     this.stallRecoveryCount = 0;
+    this.resumeRecoveryCount = 0;
     this.recoveringStream = false;
     this.lastObservedTime = 0;
     this.lastProgressAt = Date.now();
@@ -1321,37 +1330,110 @@ export class AudioPlayer {
     }
   }
 
-  public async play(): Promise<void> {
-    const song = this.state.currentSong || this.queueManager.getCurrentSong() || this.queueManager.getQueue()[0];
-    if (!song) return;
+  /**
+   * True when the native element can no longer resume on its own. iOS releases the media
+   * resource a few seconds after the page is suspended while paused: the `src` attribute
+   * survives, but nothing stays loaded (or a MediaError is set), so a bare `play()` call
+   * silently does nothing.
+   */
+  private needsFreshNativeLoad(): boolean {
+    const el = this.audio;
+    if (!el) return true;
+    if (!el.getAttribute('src')) return true;
+    if (el.error) return true;
+    if (el.networkState === 0 || el.networkState === 3) return true; // EMPTY / NO_SOURCE
+    // A request already in flight is not dead — let it finish instead of restarting it.
+    return el.readyState === 0 && el.networkState !== 2;
+  }
 
-    backgroundAudioManager.startPlaybackAnchor(song);
-    claimPlaybackAudioSession();
-    this.intendedPlayState = true;
+  /**
+   * Resumes the current track, re-opening the stream with a fresh URL when the media
+   * resource died in the background instead of calling play() on a dead element.
+   */
+  private resumeNativePipeline(): void {
+    const song = this.state.currentSong;
+    if (!song || this.isYTActive) return;
 
-    // Restored session with no src yet (fresh launch / after an interruption): load the
-    // stream instead of calling play() on an empty element.
-    if (!this.isYTActive && (!this.audio.getAttribute('src') || this.audio.networkState === 0)) {
-      await this.startPlayback(song, this.state.currentTime || 0);
-      return;
+    if (this.needsFreshNativeLoad()) {
+      this.recoveringStream = false;
+      this.reloadNativeStream(song, this.state.currentTime || 0);
+    } else if (this.audio.paused) {
+      this.audio.play().catch(() => {});
     }
 
-    if (!this.isYTActive && this.audio) {
-      this.audio.volume = this.state.isMuted ? 0 : this.state.volume;
-      try {
-        await this.audio.play();
-      } catch (err: any) {
-        if (err?.name !== 'AbortError' && !err?.message?.includes('interrupted')) {
-          const cleanId = extractYouTubeVideoId(song.id) || song.id.replace(/^(yt_liked_|yt_top_|yt_sync_)/, '').trim();
-          this.playViaYouTube(cleanId, this.state.currentTime, this.playbackSessionId);
+    this.verifyPlaybackResumed();
+  }
+
+  /**
+   * Guards a resume attempt. iOS can reject or quietly ignore `play()` once the audio
+   * session was released while backgrounded, which used to leave the UI claiming "playing"
+   * with no sound until the app was reopened. Re-open the stream on a short deadline, and
+   * if that fails too, fall back to an honest paused state the play button can recover.
+   */
+  private verifyPlaybackResumed(): void {
+    if (this.resumeCheckTimer !== null) {
+      window.clearTimeout(this.resumeCheckTimer);
+      this.resumeCheckTimer = null;
+    }
+
+    const session = this.playbackSessionId;
+    this.resumeCheckTimer = window.setTimeout(() => {
+      this.resumeCheckTimer = null;
+
+      if (!this.intendedPlayState || this.isYTActive) return;
+      if (session !== this.playbackSessionId) return;
+
+      const el = this.audio;
+      const dead =
+        !el || el.paused || !!el.error || (el.readyState === 0 && el.networkState !== 2);
+      if (!dead) return;
+
+      const song = this.state.currentSong;
+      if (song) {
+        if (this.resumeRecoveryCount < 2) {
+          this.resumeRecoveryCount++;
+          console.warn('[AudioPlayer] Resume did not take — re-opening the native stream');
+          this.recoveringStream = false;
+          this.reloadNativeStream(song, this.state.currentTime || 0);
+          this.verifyPlaybackResumed();
+          return;
+        }
+
+        // Recovery budget spent: the YouTube iframe remains the last resort, but only in
+        // the foreground — iOS suspends that video surface as soon as the app is hidden.
+        if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+          const cleanId =
+            extractYouTubeVideoId(song.id) || song.id.replace(/^(yt_liked_|yt_top_|yt_sync_)/, '').trim();
+          this.playViaYouTube(cleanId, this.state.currentTime || 0, this.playbackSessionId);
+          return;
         }
       }
-    } else if (this.isYTActive && this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
-      try {
-        this.ytPlayer.playVideo();
-      } catch (e) {
-        console.warn('YT playVideo error:', e);
-      }
+
+      // Nothing took: publish the truth so the play button is usable again.
+      this.state.isPlaying = false;
+      this.state.isBuffering = false;
+      this.state.error = 'Tap play to retry.';
+      this.intendedPlayState = false;
+      this.updateMediaSessionPlaybackState('paused');
+      this.updateMediaSessionPosition(true);
+      this.notify();
+    }, 1800);
+  }
+
+  /**
+   * Publishes playback state — never claiming "playing" unless the media element really
+   * is playing, so a failed resume cannot leave the play button toggling into a pause.
+   */
+  private publishPlayingState(song: Song, requireAudible = false): void {
+    const playing = !requireAudible || this.isYTActive || !this.audio || !this.audio.paused;
+
+    if (!playing) {
+      this.state.isPlaying = false;
+      this.state.isBuffering = false;
+      this.updateMediaSessionPlaybackState('paused');
+      this.updateMediaSessionPosition(true);
+      this.notify();
+      return;
     }
 
     this.state.isPlaying = true;
@@ -1363,9 +1445,80 @@ export class AudioPlayer {
     this.notify();
   }
 
+  public async play(): Promise<void> {
+    const song = this.state.currentSong || this.queueManager.getCurrentSong() || this.queueManager.getQueue()[0];
+    if (!song) return;
+
+    backgroundAudioManager.startPlaybackAnchor(song);
+    claimPlaybackAudioSession();
+    this.intendedPlayState = true;
+    this.state.error = null;
+    // Every explicit play intent (in-app tap, lock screen, Control Center) may retry the
+    // recovery budget from scratch; the budget only accumulates within one attempt.
+    this.resumeRecoveryCount = 0;
+
+    // Restored session with no src yet (fresh launch / after an interruption): load the
+    // stream instead of calling play() on an empty element.
+    if (!this.isYTActive && !this.audio.getAttribute('src')) {
+      await this.startPlayback(song, this.state.currentTime || 0);
+      this.verifyPlaybackResumed();
+      return;
+    }
+
+    if (this.isYTActive) {
+      if (this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
+        try {
+          this.ytPlayer.playVideo();
+        } catch (e) {
+          console.warn('YT playVideo error:', e);
+        }
+      }
+      this.publishPlayingState(song);
+      return;
+    }
+
+    // The media resource can die while the page is suspended in the background: the src
+    // attribute survives but nothing is loaded, so play() would be a silent no-op.
+    if (this.needsFreshNativeLoad()) {
+      this.resumeNativePipeline();
+      this.publishPlayingState(song, true);
+      return;
+    }
+
+    this.audio.volume = this.state.isMuted ? 0 : this.state.volume;
+
+    let playError: any = null;
+    try {
+      await this.audio.play();
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || String(err?.message || '').includes('interrupted')) {
+        return; // superseded by a pause or track change in the same tick
+      }
+      playError = err;
+    }
+
+    if (playError) {
+      console.warn('[AudioPlayer] Resume rejected on the native pipeline:', playError?.name || playError);
+      // Re-open the native stream with a fresh URL before ever handing playback to the
+      // YouTube iframe, which iOS suspends the moment the app is backgrounded again.
+      this.resumeRecoveryCount++;
+      this.recoveringStream = false;
+      this.reloadNativeStream(song, this.state.currentTime || 0);
+      this.verifyPlaybackResumed();
+      this.publishPlayingState(song, true);
+      return;
+    }
+
+    this.publishPlayingState(song, true);
+  }
+
   public pause(callerDescription = 'User interaction / UI control'): void {
     this.playbackSessionId++;
     this.intendedPlayState = false;
+    if (this.resumeCheckTimer !== null) {
+      window.clearTimeout(this.resumeCheckTimer);
+      this.resumeCheckTimer = null;
+    }
     diagnostics.recordExplicitPause(callerDescription);
     backgroundAudioManager.stopPlaybackAnchor();
 
@@ -1390,10 +1543,21 @@ export class AudioPlayer {
   }
 
   public togglePlay(): void {
-    if (this.state.isPlaying) {
+    // Trust the media element rather than the cached flag: iOS can pause the element while
+    // the page is suspended without telling us, and a stale "playing" flag turned the play
+    // button into a pause that did nothing.
+    const playing = this.isYTActive
+      ? Boolean(
+          this.ytPlayer &&
+            typeof this.ytPlayer.getPlayerState === 'function' &&
+            this.ytPlayer.getPlayerState() === 1
+        )
+      : Boolean(this.audio && !this.audio.paused);
+
+    if (playing) {
       this.pause();
     } else {
-      this.play();
+      void this.play();
     }
   }
 
