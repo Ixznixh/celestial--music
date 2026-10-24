@@ -29,6 +29,7 @@ import {
   resolveRecommendationLanguage,
 } from '../utils/musicLanguage';
 import { QueueManager } from './QueueManager';
+import { loadPlaybackSession, savePlaybackSession } from './PlaybackSessionPersistence';
 import { db, isDemoItem } from '../services/indexedDB';
 import { extractYouTubeVideoId, parseDurationInSeconds } from '../utils/formatters';
 import { diagnostics } from './PlaybackDiagnostics';
@@ -40,7 +41,6 @@ import {
   applyLockScreenMetadata,
 } from './AudioSession';
 
-const STORAGE_STATE_KEY = 'celestial_player_playback_state';
 const SILENT_AUDIO_DATA_URI =
   'data:audio/wav;base64,UklGRjIAAABXQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAAABmYWN0BAAAAAAAAABkYXRhAAAAAA==';
 
@@ -381,6 +381,8 @@ export class AudioPlayer {
       }
 
       if (document.visibilityState === 'hidden') {
+        this.persistPlaybackPosition();
+        this.persistSession();
         // Screen locked / app switched: keep the OS media session owned by us and never
         // touch the YouTube iframe (WebKit suspends iframe media in the background).
         claimPlaybackAudioSession();
@@ -429,6 +431,31 @@ export class AudioPlayer {
         this.notify();
       }
     });
+
+    // Mobile browsers may suspend or discard a backgrounded page shortly after playback
+    // is paused. Persist synchronously at lifecycle boundaries so a fresh launch restores
+    // the paused track and position instead of depending on throttled timers.
+    const persistBeforeSuspension = () => {
+      this.persistPlaybackPosition();
+      this.persistSession();
+    };
+    window.addEventListener('pagehide', persistBeforeSuspension);
+    window.addEventListener('beforeunload', persistBeforeSuspension);
+    document.addEventListener('freeze', persistBeforeSuspension);
+  }
+
+  private persistPlaybackPosition(): void {
+    if (!this.isYTActive && this.audio && Number.isFinite(this.audio.currentTime)) {
+      this.state.currentTime = this.audio.currentTime;
+      if (Number.isFinite(this.audio.duration) && this.audio.duration > 0) {
+        this.state.duration = this.audio.duration;
+      }
+    } else if (this.isYTActive && this.ytPlayer && typeof this.ytPlayer.getCurrentTime === 'function') {
+      try {
+        const currentTime = this.ytPlayer.getCurrentTime();
+        if (Number.isFinite(currentTime) && currentTime >= 0) this.state.currentTime = currentTime;
+      } catch {}
+    }
   }
 
   public setLowPowerMode(enabled: boolean): void {
@@ -642,6 +669,7 @@ export class AudioPlayer {
      */
     el.addEventListener('pause', () => {
       if (this.isYTActive || this.isSwitchingSource) return;
+      this.persistPlaybackPosition();
 
       if (this.intendedPlayState) {
         this.intendedPlayState = false;
@@ -653,6 +681,7 @@ export class AudioPlayer {
       this.updateMediaSessionPlaybackState('paused');
       this.updateMediaSessionPosition(true);
       this.updateMediaSessionHandlers();
+      this.persistSession();
       this.notify();
     });
 
@@ -1404,6 +1433,7 @@ export class AudioPlayer {
   }
 
   public pause(callerDescription = 'User interaction / UI control'): void {
+    this.persistPlaybackPosition();
     this.playbackSessionId++;
     this.intendedPlayState = false;
     diagnostics.recordExplicitPause(callerDescription);
@@ -1894,12 +1924,12 @@ export class AudioPlayer {
     try {
       const payload = {
         currentSong: this.state.currentSong,
-        currentTime: Math.round(this.state.currentTime),
+        currentTime: Math.round(this.state.currentTime * 10) / 10,
         duration: Math.round(this.state.duration),
         volume: this.state.volume,
         isMuted: this.state.isMuted,
       };
-      localStorage.setItem(STORAGE_STATE_KEY, JSON.stringify(payload));
+      savePlaybackSession(payload);
 
       const upcomingTracks = this.queueManager.getUpcomingTracks();
       const nextSong = upcomingTracks.length > 0 ? upcomingTracks[0] : null;
@@ -1914,20 +1944,23 @@ export class AudioPlayer {
 
   private async restoreSession(): Promise<void> {
     try {
-      const saved = localStorage.getItem(STORAGE_STATE_KEY);
+      const saved = loadPlaybackSession();
       if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.currentSong && !isDemoItem(parsed.currentSong)) {
-          this.state.currentSong = parsed.currentSong;
-          this.state.currentTime = parsed.currentTime || 0;
-          this.state.duration = parsed.duration || parsed.currentSong.duration || 180;
-          this.state.volume = typeof parsed.volume === 'number' ? parsed.volume : 0.85;
-          this.state.isMuted = Boolean(parsed.isMuted);
+        if (saved.currentSong && !isDemoItem(saved.currentSong)) {
+          const queuedSong = this.queueManager.getCurrentSong();
+          const queueIsNewer = queuedSong && queuedSong.id !== saved.currentSong.id;
+          this.state.currentSong = queueIsNewer ? queuedSong : saved.currentSong;
+          this.state.currentTime = queueIsNewer ? 0 : saved.currentTime;
+          this.state.duration = queueIsNewer
+            ? queuedSong.duration || 180
+            : saved.duration || saved.currentSong.duration || 180;
+          this.state.volume = saved.volume;
+          this.state.isMuted = saved.isMuted;
           this.audio.volume = this.state.isMuted ? 0 : this.state.volume;
           this.updateMediaSessionMetadata(this.state.currentSong);
           this.updateMediaSessionPlaybackState('paused');
-        } else if (parsed.currentSong && isDemoItem(parsed.currentSong)) {
-          localStorage.removeItem(STORAGE_STATE_KEY);
+        } else if (saved.currentSong && isDemoItem(saved.currentSong)) {
+          localStorage.removeItem('celestial_player_playback_state');
         }
       }
 
@@ -1953,6 +1986,9 @@ export class AudioPlayer {
           this.updateMediaSessionPlaybackState('paused');
         }
       }
+      this.state.isPlaying = false;
+      this.intendedPlayState = false;
+      this.notify();
     } catch {}
   }
 }
