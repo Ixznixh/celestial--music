@@ -364,7 +364,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
               </h3>
               <motion.div
                 whileTap={{ scale: 0.98 }}
-                onClick={() => onPlaySong(results.songs[0], results.songs)}
+                onClick={() => onPlaySong(results.songs[0], undefined)}
                 className="relative p-3.5 sm:p-4 rounded-2xl bg-neutral-850 hover:bg-neutral-800 border border-neutral-750/90 hover:border-neutral-700 cursor-pointer transition-all shadow-xl flex items-center justify-between gap-3 sm:gap-4 group"
               >
                 <div className="flex items-center gap-3.5 min-w-0 flex-1">
@@ -417,7 +417,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                     aria-label={`Play ${results.songs[0].title}`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onPlaySong(results.songs[0], results.songs);
+                      onPlaySong(results.songs[0], undefined);
                     }}
                     className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shadow-lg shadow-rose-500/30 group-hover:scale-105 transition-transform"
                   >
@@ -443,7 +443,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                     className="flex items-center justify-between p-2.5 pr-3 hover:bg-neutral-800/70 active:bg-neutral-800 transition group cursor-pointer"
                   >
                     <button
-                      onClick={() => onPlaySong(song, results.songs)}
+                      onClick={() => onPlaySong(song, undefined)}
                       className="flex items-center gap-3 min-w-0 flex-1 text-left"
                     >
                       <ArtworkImage
