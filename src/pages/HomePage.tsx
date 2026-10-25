@@ -7,6 +7,7 @@ import { ArtworkImage } from '../components/common/ArtworkImage';
 import { isDemoItem } from '../services/indexedDB';
 import { emptyTasteProfile, loadTasteProfile, TasteProfile } from '../services/tasteProfile';
 import { composeHomeFeed } from '../services/homeFeed';
+import { ensureAccountScopeReady, onAccountScopeChange } from '../services/accountScope';
 import { User } from 'firebase/auth';
 import {
   Play,
@@ -52,6 +53,38 @@ type MoodFilter = 'all' | 'trending' | 'melody' | 'kuthu' | 'anirudh' | 'rahman'
 const CACHE_KEY = 'celestial_ytmusic_tamil_home_feed_cache';
 const LAST_SYNC_KEY = 'celestial_ytmusic_tamil_last_sync';
 
+/**
+ * Reads the feed cached for the scope that is open right now. The cache is only trusted
+ * after the account scope is known, otherwise one listener could briefly see another's
+ * shelves while the fresh build arrives.
+ */
+function readCachedFeed(): HomeSection[] {
+  try {
+    const cached = sessionStorage.getItem(CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached) as HomeSection[];
+      return parsed
+        .map((sec) => {
+          const seenItemKeys = new Set<string>();
+          const dedupedItems = (sec.items || []).filter((item) => {
+            if (isDemoItem(item)) return false;
+            const itemTitle =
+              ('title' in item ? item.title : ('name' in item ? (item as any).name : '')) || '';
+            const itemArtist = ('artist' in item ? (item as any).artist : '') || '';
+            const itemKey = `${itemTitle.trim().toLowerCase()}:::${itemArtist.trim().toLowerCase()}`;
+            if (seenItemKeys.has(itemKey) || seenItemKeys.has(item.id)) return false;
+            seenItemKeys.add(itemKey);
+            seenItemKeys.add(item.id);
+            return true;
+          });
+          return { ...sec, items: dedupedItems };
+        })
+        .filter((sec) => sec.items.length > 0);
+    }
+  } catch {}
+  return [];
+}
+
 export const HomePage: React.FC<HomePageProps> = ({
   onNavigate,
   onPlaySong,
@@ -70,42 +103,17 @@ export const HomePage: React.FC<HomePageProps> = ({
 
   const cleanFavorites = favoriteSongs.filter((s) => !isDemoItem(s));
 
-  const [sections, setSections] = useState<HomeSection[]>(() => {
-    try {
-      const cached = sessionStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached) as HomeSection[];
-        return parsed.map((sec) => {
-          const seenItemKeys = new Set<string>();
-          const dedupedItems = (sec.items || []).filter((item) => {
-            if (isDemoItem(item)) return false;
-            const itemTitle = ('title' in item ? item.title : ('name' in item ? (item as any).name : '')) || '';
-            const itemArtist = ('artist' in item ? (item as any).artist : '') || '';
-            const itemKey = `${itemTitle.trim().toLowerCase()}:::${itemArtist.trim().toLowerCase()}`;
-            if (seenItemKeys.has(itemKey) || seenItemKeys.has(item.id)) return false;
-            seenItemKeys.add(itemKey);
-            seenItemKeys.add(item.id);
-            return true;
-          });
-          return {
-            ...sec,
-            items: dedupedItems,
-          };
-        }).filter((sec) => sec.items.length > 0);
-      }
-    } catch {}
-    return [];
-  });
+  const [sections, setSections] = useState<HomeSection[]>([]);
 
   const [activeMood, setActiveMood] = useState<MoodFilter>('all');
-  const [isLoading, setIsLoading] = useState(() => sections.length === 0);
+  const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>('Just now');
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<TasteProfile>(emptyTasteProfile);
 
   const lastFetchRef = useRef<number>(0);
-  const sectionsCountRef = useRef<number>(sections.length);
+  const sectionsCountRef = useRef<number>(0);
 
   const updateSyncLabel = () => {
     const last = parseInt(sessionStorage.getItem(LAST_SYNC_KEY) || '0', 10);
@@ -194,15 +202,42 @@ export const HomePage: React.FC<HomePageProps> = ({
    * Auto-Refresh on mount and mood changes
    */
   useEffect(() => {
-    // Every mount is a fresh build: the server rotates shelves, so a reload or a
-    // close-and-reopen always hands back a different feed.
-    loadHomeData(true, activeMood);
+    // The feed is built from whichever account's history is open, so nothing is fetched
+    // until the scope is known. Paint that scope's cached shelves first, then rebuild.
+    let cancelled = false;
+    ensureAccountScopeReady().then(() => {
+      if (cancelled) return;
+      const cached = readCachedFeed();
+      if (cached.length > 0) {
+        setSections(cached);
+        sectionsCountRef.current = cached.length;
+        setIsLoading(false);
+        updateSyncLabel();
+      }
+      // Every mount is a fresh build: the server rotates shelves, so a reload or a
+      // close-and-reopen always hands back a different feed.
+      loadHomeData(true, activeMood);
+    });
+
+    // Signing in, out or as someone else means a different listener: drop their cached
+    // feed, forget their taste profile and build for the account that is now open.
+    const unsubscribeScope = onAccountScopeChange(() => {
+      sessionStorage.removeItem(CACHE_KEY);
+      sessionStorage.removeItem(LAST_SYNC_KEY);
+      setSections([]);
+      sectionsCountRef.current = 0;
+      setProfile(emptyTasteProfile());
+      setError(null);
+      loadHomeData(true, activeMood);
+    });
 
     // Update clock label periodically (throttled from 30s to 120s in Low Power Mode)
     const timerInterval = settings?.lowPowerMode ? 120_000 : 30_000;
     const clockTimer = setInterval(updateSyncLabel, timerInterval);
 
     return () => {
+      cancelled = true;
+      unsubscribeScope();
       clearInterval(clockTimer);
     };
   }, [activeMood, loadHomeData, settings?.lowPowerMode]);
@@ -467,8 +502,8 @@ export const HomePage: React.FC<HomePageProps> = ({
                           fallbackVideoId={song.id}
                           alt={song.title}
                           rounded="rounded-md"
-                          className="w-9 h-9 shrink-0 object-cover"
                           size="small"
+                          className="w-9 h-9 shrink-0 object-cover"
                         />
                         <div
                           className={`absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity ${

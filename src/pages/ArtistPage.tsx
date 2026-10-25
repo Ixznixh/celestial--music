@@ -83,7 +83,7 @@ export const ArtistPage: React.FC<ArtistPageProps> = ({
       {/* Hero Header */}
       <div className="flex flex-col sm:flex-row items-center sm:items-end text-center sm:text-left gap-5 sm:gap-8 pt-2">
         <div className="w-36 h-36 sm:w-44 sm:h-44 md:w-48 md:h-48 rounded-full overflow-hidden shadow-2xl shrink-0 border-2 border-white/10 ring-4 ring-white/5">
-          <ArtworkImage src={artist.avatarUrl} alt={artist.name} aspectRatio="avatar" className="w-full h-full object-cover" />
+          <ArtworkImage src={artist.avatarUrl} alt={artist.name} aspectRatio="avatar" size="large" priority className="w-full h-full object-cover" />
         </div>
 
         <div className="flex-1 min-w-0">
@@ -154,6 +154,7 @@ export const ArtistPage: React.FC<ArtistPageProps> = ({
                 <ArtworkImage
                   src={song.artworkUrl}
                   alt={song.title}
+                  size="small"
                   className="w-11 h-11 rounded-lg shrink-0 shadow-sm"
                 />
                 <div className="min-w-0 flex-1 pr-2">

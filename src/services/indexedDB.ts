@@ -5,6 +5,7 @@
 
 import { Song, Album, Artist, Playlist, AppSettings, PlaybackState } from '../types';
 import { auth, syncCachedSongToFirestore } from '../lib/firebase';
+import { GUEST_SCOPE, scopeDbName, trimRecents } from './accountData';
 
 const DB_NAME = 'CelestialMusicDB';
 const DB_VERSION = 6;
@@ -51,9 +52,43 @@ export function isDemoItem(item: any): boolean {
 class CelestialDatabase {
   private dbPromise: Promise<IDBDatabase> | null = null;
   private hasCleanedDemo = false;
+  /** Which account this connection serves: 'guest' or 'u_<uid>'. */
+  private scope: string = GUEST_SCOPE;
+  /** Scope switches are serialised so two rapid sign-ins cannot interleave. */
+  private scopeSwitch: Promise<void> = Promise.resolve();
+
+  getScope(): string {
+    return this.scope;
+  }
+
+  /**
+   * Switches every library store to another account's database. The guest scope keeps the
+   * original database file, so a device's existing library survives sign-out untouched.
+   */
+  setScope(next: string): Promise<void> {
+    const target = (next || '').trim() || GUEST_SCOPE;
+    this.scopeSwitch = this.scopeSwitch
+      .then(async () => {
+        if (target === this.scope) return;
+        const previous = this.dbPromise;
+        this.scope = target;
+        this.dbPromise = null;
+        this.hasCleanedDemo = false;
+        if (previous) {
+          try {
+            (await previous).close();
+          } catch {
+            // A rejected open is fine: the next call opens the new scope from scratch.
+          }
+        }
+      })
+      .catch(() => {});
+    return this.scopeSwitch;
+  }
 
   private getDB(): Promise<IDBDatabase> {
     if (this.dbPromise) return this.dbPromise;
+    const dbName = scopeDbName(this.scope, DB_NAME);
 
     this.dbPromise = new Promise((resolve, reject) => {
       if (typeof window === 'undefined' || !window.indexedDB) {
@@ -61,7 +96,7 @@ class CelestialDatabase {
         return;
       }
 
-      const request = window.indexedDB.open(DB_NAME, DB_VERSION);
+      const request = window.indexedDB.open(dbName, DB_VERSION);
 
       request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
         const db = (event.target as IDBOpenDBRequest).result;
@@ -435,6 +470,50 @@ class CelestialDatabase {
         };
         req.onerror = () => resolve([]);
       });
+    });
+  }
+
+  /**
+   * Recent plays with their original timestamps. Unlike getRecentlyPlayed this is a plain
+   * read: the account sync layer needs the history as it happened, not a rewritten one.
+   */
+  async getRecentEntries(limit = 50): Promise<(Song & { playedAt?: number })[]> {
+    try {
+      const entries = await this.withStore(STORES.RECENTLY_PLAYED, 'readonly', (store) => {
+        return new Promise<(Song & { playedAt?: number })[]>((resolve) => {
+          const req = store.getAll();
+          req.onsuccess = () => resolve((req.result || []) as (Song & { playedAt?: number })[]);
+          req.onerror = () => resolve([]);
+        });
+      });
+      return trimRecents(entries.filter((item) => item && !isDemoItem(item)), limit);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Restores history from another device of the same account, keeping each play's real
+   * timestamp so recency weighting stays truthful instead of pretending it all just played.
+   */
+  async importRecentEntries(entries: (Song & { playedAt?: number })[]): Promise<void> {
+    const clean = trimRecents(
+      (entries || []).filter((item) => item && item.id && !isDemoItem(item)),
+      100
+    );
+    if (clean.length === 0) return;
+
+    await this.withStore(STORES.RECENTLY_PLAYED, 'readwrite', (store) => {
+      const req = store.getAll();
+      req.onsuccess = () => {
+        const existing = new Set(
+          ((req.result || []) as { id?: string }[]).map((item) => item.id).filter(Boolean)
+        );
+        for (const entry of clean) {
+          if (existing.has(entry.id)) continue; // local history for this account wins
+          store.put({ ...entry, playedAt: entry.playedAt || Date.now() });
+        }
+      };
     });
   }
 
@@ -828,8 +907,24 @@ class CelestialDatabase {
         } catch {}
       }
 
-      // 2. Stream audio track from audio proxy endpoint with retry
-      const audioUrl = `/api/song/${encodeURIComponent(song.id)}/audio`;
+      // 2. Stream audio track from audio proxy endpoint with retry.
+      // Metadata matters: the proxy matches the exact recording by title/artist/duration,
+      // and downloadQuality decides which file is stored — the same inputs playback uses.
+      let quality = 'high';
+      try {
+        const settings = await this.getSetting<{ downloadQuality?: string }>('celestial_settings', {});
+        if (settings && typeof settings.downloadQuality === 'string' && settings.downloadQuality) {
+          quality = settings.downloadQuality;
+        }
+      } catch {}
+      const params = new URLSearchParams({
+        title: song.title || '',
+        artist: song.artist || song.artists || '',
+        album: song.album || '',
+        duration: String(Math.round(Number(song.duration) || 0)),
+        quality,
+      });
+      const audioUrl = `/api/song/${encodeURIComponent(song.id)}/audio?${params.toString()}`;
       let response: Response | null = null;
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
@@ -881,22 +976,18 @@ class CelestialDatabase {
       // 3. Save audio blob (if genuinely fetched) and metadata to IndexedDB
       if (blob && blob.size > 1000) {
         await this.cacheTrackBlob(song.id, blob, song);
-      } else {
-        // Cache song metadata so it appears in downloaded library and cached tracks
-        await this.cacheCurrentAndNextTrack(song, null);
+        this.notifyDownloadsChanged();
+        return true;
       }
-      this.notifyDownloadsChanged();
-      return true;
+
+      // Nothing usable arrived. Saying "saved" here would put a tick next to a track
+      // that cannot play offline, so this is reported as a failure instead.
+      console.warn(`[OfflineDownload] No audio bytes stored for ${song.id}`);
+      if (onProgress) onProgress(100);
+      return false;
     } catch (err: any) {
       console.warn(`[OfflineDownload] Failed to download track ${song.id}:`, err?.message || err);
-      try {
-        await this.cacheCurrentAndNextTrack(song, null);
-        this.notifyDownloadsChanged();
-        if (onProgress) onProgress(100);
-        return true;
-      } catch {
-        return false;
-      }
+      return false;
     }
   }
 }

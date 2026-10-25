@@ -132,10 +132,26 @@ input[type="range"]::-moz-range-thumb:hover {
   transform: scale(1.15);
 }
 
+/* Artwork loading skeleton: a soft sweep while a thumbnail decodes, so the grid reads
+   as "loading" instead of flashing flat grey boxes. */
+@keyframes celestial-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: celestial-shimmer 1.4s ease-in-out infinite;
+}
+
 /* Low Power Mode Styles: stops visual animations, pauses continuous keyframes, and reduces GPU blurs */
 html.low-power-mode .animate-spin,
 html.low-power-mode .animate-pulse,
 html.low-power-mode .animate-bounce,
+html.low-power-mode .animate-shimmer,
 html.low-power-mode [class*="animate-spin"],
 html.low-power-mode [class*="animate-pulse"] {
   animation: none !important;

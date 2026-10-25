@@ -21,6 +21,7 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { Song, Playlist } from '../types';
+import { toSyncSong } from '../services/accountData';
 
 // Initialize Firebase App
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
@@ -246,6 +247,61 @@ export async function fetchUserCachedSongsFromFirestore(userId: string): Promise
   } catch (err: any) {
     handleFirestoreError(err, 'cached songs fetch');
     return [];
+  }
+}
+
+/* ----------------- LISTENING HISTORY & TASTE (one document per account) ----------------- */
+
+export interface ListeningSnapshot {
+  recents: (Song & { playedAt?: number })[];
+  playStats: Record<string, any> | null;
+}
+
+/**
+ * Recent history and the play ledger live on the account's own `users/{uid}` document,
+ * whose security rule already restricts it to its owner. Keeping them there rather than
+ * in new collections means per-account isolation needs no rules change at all.
+ */
+export async function syncListeningDataToFirestore(
+  userId: string,
+  recents: (Song & { playedAt?: number })[],
+  playStats: Record<string, any>
+): Promise<void> {
+  if (!userId || isFirestoreQuotaExhausted) return;
+  try {
+    await setDoc(
+      doc(db, 'users', userId),
+      {
+        // toSyncSong drops lyrics so 30 tracks stay far under Firestore's 1 MB limit.
+        recentlyPlayed: (recents || []).map((entry) => ({
+          ...toSyncSong(entry),
+          playedAt: entry.playedAt || Date.now(),
+        })),
+        playStats: playStats || {},
+        listeningUpdatedAt: Date.now(),
+      },
+      { merge: true }
+    );
+  } catch (err: any) {
+    handleFirestoreError(err, 'listening sync');
+  }
+}
+
+export async function fetchListeningDataFromFirestore(userId: string): Promise<ListeningSnapshot | null> {
+  if (!userId || isFirestoreQuotaExhausted) return null;
+  try {
+    const snap = await getDoc(doc(db, 'users', userId));
+    if (!snap.exists()) return null;
+    const data = snap.data() || {};
+    const recents = Array.isArray(data.recentlyPlayed) ? (data.recentlyPlayed as Song[]) : [];
+    const playStats =
+      data.playStats && typeof data.playStats === 'object'
+        ? (data.playStats as Record<string, any>)
+        : null;
+    return { recents, playStats };
+  } catch (err: any) {
+    handleFirestoreError(err, 'listening fetch');
+    return null;
   }
 }
 

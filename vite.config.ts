@@ -55,7 +55,48 @@ export default defineConfig(() => {
           navigateFallback: '/index.html',
           navigateFallbackDenylist: [/^\/api\//],
           cleanupOutdatedCaches: true,
-          runtimeCaching: [],
+          // Artwork is the one thing worth caching: thumbnails are re-requested on every
+          // shelf repaint, so Cache Storage makes them paint instantly and keeps the grid
+          // populated offline. Only image hosts and the image proxy match — never the
+          // audio proxy (/api/song/:id/audio) or any other API route.
+          runtimeCaching: [
+            {
+              urlPattern: ({ url }) =>
+                [
+                  'i.ytimg.com',
+                  'img.youtube.com',
+                  'ggpht.com',
+                  'googleusercontent.com',
+                  'images.unsplash.com',
+                  'cdn.jiosaavn.com',
+                ].some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`)),
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'celestial-artwork-cache',
+                expiration: {
+                  maxEntries: 500,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              urlPattern: /\/api\/image-proxy/,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'celestial-image-proxy-cache',
+                expiration: {
+                  maxEntries: 400,
+                  maxAgeSeconds: 60 * 60 * 24 * 7,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+          ],
         },
         devOptions: {
           enabled: false,

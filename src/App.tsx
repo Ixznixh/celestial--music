@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { AppView, Song, Album, Artist, Playlist, AppSettings } from './types';
 import { usePlayer } from './hooks/usePlayer';
 import { useLibrary } from './hooks/useLibrary';
+import { useDownloads } from './hooks/useDownloads';
 import { db } from './services/indexedDB';
 
 // Layout Components
@@ -30,6 +31,7 @@ import { TrackContextMenu } from './components/common/TrackContextMenu';
 import { AddToPlaylistModal } from './components/common/AddToPlaylistModal';
 import { NewPlaylistModal } from './components/common/NewPlaylistModal';
 import { subscribeToAuth } from './lib/firebase';
+import { ensureAccountScopeReady, onAccountScopeChange } from './services/accountScope';
 import { User } from 'firebase/auth';
 
 export function App() {
@@ -123,6 +125,7 @@ export function App() {
   // Hooks
   const player = usePlayer();
   const library = useLibrary();
+  const downloads = useDownloads();
 
   // Helper to determine relative index of view
   const getViewRank = (view: AppView) => {
@@ -152,18 +155,39 @@ export function App() {
     }
   }, [player.currentSong?.id]);
 
-  // Load persistent settings
-  useEffect(() => {
-    db.getSetting<AppSettings>('celestial_settings', settings).then((saved) => {
+  // Load persistent settings — each account has its own copy in its own stores
+  const loadSettings = useCallback(async () => {
+    try {
+      const saved = await db.getSetting<AppSettings | null>('celestial_settings', null);
       if (saved) {
         setSettings(saved);
-      } else {
-        db.getSetting<AppSettings>('luma_settings', settings).then((oldSaved) => {
-          if (oldSaved) setSettings(oldSaved);
-        });
+        return;
       }
-    });
+      const legacy = await db.getSetting<AppSettings | null>('luma_settings', null);
+      if (legacy) setSettings(legacy);
+    } catch (e) {
+      console.warn('Settings could not be loaded for this account:', e);
+    }
   }, []);
+
+  useEffect(() => {
+    // Wait for the first account to be known so settings never load from the wrong scope
+    let cancelled = false;
+    ensureAccountScopeReady().then(() => {
+      if (!cancelled) loadSettings();
+    });
+
+    // Sign-in, sign-out and account switches all swap the stores underneath us
+    const unsubscribeScope = onAccountScopeChange(() => {
+      loadSettings();
+      library.reloadLibrary();
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribeScope();
+    };
+  }, [loadSettings, library.reloadLibrary]);
 
   // Sync appearance with DOM
   useEffect(() => {
@@ -596,6 +620,13 @@ export function App() {
           onAddToPlaylist={(song) => setAddToPlaylistSong(song)}
           onNavigateToAlbum={(albumId) => navigateTo({ type: 'album', albumId })}
           onNavigateToArtist={(artistId) => navigateTo({ type: 'artist', artistId })}
+          isDownloaded={downloads.isDownloaded(contextMenuSong.id)}
+          isDownloading={downloads.isDownloading(contextMenuSong.id)}
+          downloadProgress={downloads.getProgress(contextMenuSong.id)}
+          onDownload={(song) => {
+            void downloads.downloadSong(song);
+          }}
+          onRemoveDownload={downloads.removeDownload}
         />
       )}
 

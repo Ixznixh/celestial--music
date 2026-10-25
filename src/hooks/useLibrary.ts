@@ -1,6 +1,17 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Song, Album, Artist, Playlist } from '../types';
 import { db, isDemoItem } from '../services/indexedDB';
+import {
+  auth,
+  syncFavoriteToFirestore,
+  syncPlaylistToFirestore,
+  deletePlaylistFromFirestore,
+} from '../lib/firebase';
+import { ensureAccountScopeReady, onAccountScopeChange } from '../services/accountScope';
+import { autoDownloadIfEnabled } from '../services/autoDownload';
+
+/** The account whose stores are open right now, or null while signed out. */
+const signedInUid = (): string | null => auth.currentUser?.uid || null;
 
 export function useLibrary() {
   const [favoriteSongs, setFavoriteSongs] = useState<Song[]>([]);
@@ -40,7 +51,17 @@ export function useLibrary() {
   }, []);
 
   useEffect(() => {
-    loadLibrary();
+    // Wait for the signed-in account to be resolved so the first paint is that
+    // listener's library rather than a flash of the guest one.
+    let cancelled = false;
+    ensureAccountScopeReady().then(() => {
+      if (!cancelled) loadLibrary();
+    });
+
+    // A sign-in, sign-out or account switch swaps the whole store: reload from it.
+    const unsubscribeScope = onAccountScopeChange(() => {
+      loadLibrary();
+    });
 
     const handleDownloadsChanged = () => {
       loadLibrary();
@@ -48,6 +69,8 @@ export function useLibrary() {
 
     window.addEventListener('celestial-downloads-changed', handleDownloadsChanged);
     return () => {
+      cancelled = true;
+      unsubscribeScope();
       window.removeEventListener('celestial-downloads-changed', handleDownloadsChanged);
     };
   }, [loadLibrary]);
@@ -62,12 +85,21 @@ export function useLibrary() {
       await db.addFavorite(song);
       setFavoriteSongs((prev) => [song, ...prev]);
     }
+    // Signed-in listeners keep this favourite on their own account, not on the device.
+    const uid = signedInUid();
+    if (uid) syncFavoriteToFirestore(uid, song, !isFav).catch(() => {});
   }, [favoriteSongs]);
 
   const isFavorite = useCallback(
     (songId: string) => favoriteSongs.some((s) => s.id === songId),
     [favoriteSongs]
   );
+
+  // Signed-in listeners keep their account's copy current; guests just keep it local.
+  const pushPlaylistToAccount = useCallback((playlist: Playlist) => {
+    const uid = signedInUid();
+    if (uid) syncPlaylistToFirestore(uid, playlist).catch(() => {});
+  }, []);
 
   // Albums
   const toggleSaveAlbum = useCallback(async (album: Album) => {
@@ -78,6 +110,8 @@ export function useLibrary() {
     } else {
       await db.saveAlbum(album);
       setSavedAlbums((prev) => [album, ...prev]);
+      // Saving an album is the intent to keep it: honour auto-download in the background.
+      autoDownloadIfEnabled(album.tracks || []).catch(() => {});
     }
   }, [savedAlbums]);
 
@@ -120,17 +154,21 @@ export function useLibrary() {
     };
     await db.savePlaylist(newPlaylist);
     setPlaylists((prev) => [newPlaylist, ...prev]);
+    pushPlaylistToAccount(newPlaylist);
     return newPlaylist;
-  }, []);
+  }, [pushPlaylistToAccount]);
 
   const updatePlaylist = useCallback(async (updated: Playlist) => {
     await db.savePlaylist(updated);
     setPlaylists((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-  }, []);
+    pushPlaylistToAccount(updated);
+  }, [pushPlaylistToAccount]);
 
   const deletePlaylist = useCallback(async (playlistId: string) => {
     await db.deletePlaylist(playlistId);
     setPlaylists((prev) => prev.filter((p) => p.id !== playlistId));
+    const uid = signedInUid();
+    if (uid) deletePlaylistFromFirestore(playlistId).catch(() => {});
   }, []);
 
   const addSongToPlaylist = useCallback(async (playlistId: string, song: Song) => {
@@ -144,6 +182,7 @@ export function useLibrary() {
     const updatedTracks = [...target.tracks, song];
     const totalDuration = updatedTracks.reduce((acc, cur) => acc + cur.duration, 0);
     const updatedCollage = Array.from(new Set(updatedTracks.map((t) => t.artworkUrl))).slice(0, 4);
+    autoDownloadIfEnabled([song]).catch(() => {});
 
     const updated: Playlist = {
       ...target,
@@ -157,7 +196,8 @@ export function useLibrary() {
 
     await db.savePlaylist(updated);
     setPlaylists((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-  }, [playlists]);
+    pushPlaylistToAccount(updated);
+  }, [playlists, pushPlaylistToAccount]);
 
   const removeSongFromPlaylist = useCallback(async (playlistId: string, songId: string) => {
     const target = playlists.find((p) => p.id === playlistId);
@@ -178,7 +218,8 @@ export function useLibrary() {
 
     await db.savePlaylist(updated);
     setPlaylists((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-  }, [playlists]);
+    pushPlaylistToAccount(updated);
+  }, [playlists, pushPlaylistToAccount]);
 
   const reorderPlaylistTracks = useCallback(async (playlistId: string, fromIndex: number, toIndex: number) => {
     const target = playlists.find((p) => p.id === playlistId);
@@ -196,13 +237,16 @@ export function useLibrary() {
 
     await db.savePlaylist(updated);
     setPlaylists((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-  }, [playlists]);
+    pushPlaylistToAccount(updated);
+  }, [playlists, pushPlaylistToAccount]);
 
   const importPlaylist = useCallback(async (playlist: Playlist) => {
     await db.savePlaylist(playlist);
     setPlaylists((prev) => [playlist, ...prev.filter((p) => p.id !== playlist.id)]);
+    pushPlaylistToAccount(playlist);
+    autoDownloadIfEnabled(playlist.tracks || []).catch(() => {});
     return playlist;
-  }, []);
+  }, [pushPlaylistToAccount]);
 
   const clearFavorites = useCallback(async () => {
     for (const song of favoriteSongs) {

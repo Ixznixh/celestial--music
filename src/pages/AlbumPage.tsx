@@ -95,7 +95,7 @@ export const AlbumPage: React.FC<AlbumPageProps> = ({
       {/* Hero Header */}
       <div className="flex flex-col sm:flex-row items-center sm:items-end text-center sm:text-left gap-5 sm:gap-8">
         <div className="w-48 h-48 sm:w-56 sm:h-56 md:w-60 md:h-60 rounded-3xl overflow-hidden shadow-2xl shrink-0 border border-white/10">
-          <ArtworkImage src={album.artworkUrl} alt={album.title} rounded="rounded-3xl" className="w-full h-full object-cover" />
+          <ArtworkImage src={album.artworkUrl} alt={album.title} rounded="rounded-3xl" size="large" priority className="w-full h-full object-cover" />
         </div>
 
         <div className="flex-1 min-w-0">

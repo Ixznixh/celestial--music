@@ -145,8 +145,8 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
                       fallbackVideoId={currentSong.id}
                       alt={currentSong.title}
                       rounded="rounded-xl"
-                      className="w-11 h-11 md:w-12 md:h-12 rounded-xl shadow-md border border-white/10 object-cover"
                       size="small"
+                      className="w-11 h-11 md:w-12 md:h-12 rounded-xl shadow-md border border-white/10 object-cover"
                     />
                   </motion.div>
 

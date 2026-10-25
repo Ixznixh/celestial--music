@@ -110,8 +110,8 @@ export const DesktopPlayerBar: React.FC<DesktopPlayerBarProps> = ({
               fallbackVideoId={currentSong.id}
               alt={currentSong.title}
               rounded="rounded-lg"
-              className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-200"
               size="small"
+              className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-200"
             />
             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
               <Maximize2 className="w-4 h-4 text-white" />

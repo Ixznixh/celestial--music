@@ -149,6 +149,7 @@ export const ReplayModal: React.FC<ReplayModalProps> = ({
                           <ArtworkImage
                             src={song.artworkUrl}
                             alt=""
+                            size="small"
                             className="w-10 h-10 rounded-xl object-cover"
                           />
                           <div className="min-w-0 flex-1">

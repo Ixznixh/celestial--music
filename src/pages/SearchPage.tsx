@@ -374,6 +374,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                       fallbackVideoId={results.songs[0].id}
                       alt={results.songs[0].title}
                       rounded="rounded-xl"
+                      size="small"
                       className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl shadow-xl object-cover"
                     />
                   </div>
@@ -450,6 +451,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                         fallbackVideoId={song.id}
                         alt={song.title}
                         rounded="rounded-md"
+                        size="small"
                         className="w-11 h-11 rounded-md shrink-0 shadow-sm"
                       />
                       <div className="min-w-0 flex-1 pr-2">

@@ -9,6 +9,10 @@ interface ArtworkImageProps {
   rounded?: string;
   fallbackVideoId?: string;
   size?: 'small' | 'medium' | 'large' | 'full';
+  /** Above-the-fold art (now playing, page headers) starts loading immediately. */
+  priority?: boolean;
+  /** Tints the loading skeleton so the grid does not flash flat grey. */
+  placeholderColor?: string;
 }
 
 /**
@@ -32,13 +36,19 @@ export function upgradeArtworkUrl(url?: string, size: 'small' | 'medium' | 'larg
     clean = clean.replace(/[?&]sqp=[^&#]*/g, '').replace(/[?&]rs=[^&#]*/g, '');
     clean = clean.replace(/\?&/g, '?').replace(/[?&]$/, '');
 
-    // Upgrade low-res thumbnail variants to crisp HD
+    // Pick the thumbnail variant that actually matches the box it lands in. Requesting
+    // maxresdefault (1280x720) for a 40px row was the single biggest reason artwork
+    // arrived late: mq/hq cover every small and grid placement at a fraction of the bytes.
     const match = clean.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//);
     if (match && match[1]) {
       const vidId = match[1];
-      if (clean.includes('/default.jpg') || clean.includes('/mqdefault.jpg') || clean.includes('/hqdefault.jpg')) {
-        clean = `https://i.ytimg.com/vi/${vidId}/maxresdefault.jpg`;
-      }
+      const variant =
+        size === 'small'
+          ? 'mqdefault.jpg'
+          : size === 'medium'
+            ? 'hqdefault.jpg'
+            : 'maxresdefault.jpg';
+      clean = `https://i.ytimg.com/vi/${vidId}/${variant}`;
     }
   }
 
@@ -53,6 +63,8 @@ export const ArtworkImage: React.FC<ArtworkImageProps> = ({
   rounded = 'rounded-xl',
   fallbackVideoId,
   size = 'medium',
+  priority = false,
+  placeholderColor,
 }) => {
   // Upgraded source based on optimal requested size
   const optimizedSrc = useMemo(() => upgradeArtworkUrl(src, size as 'small' | 'medium' | 'large' | 'full'), [src, size]);
@@ -118,16 +130,25 @@ export const ArtworkImage: React.FC<ArtworkImageProps> = ({
       : 'aspect-square rounded-full';
 
   const showPlaceholder = !currentSrc || stage === 4;
+  // Never show a half-decoded image: the box holds a skeleton until the bitmap is ready.
+  const showSkeleton = Boolean(currentSrc) && !isLoaded && stage !== 4;
 
   return (
     <div
-      className={`relative overflow-hidden bg-neutral-900 shadow-sm select-none ${aspectClass} ${
+      className={`relative overflow-hidden shadow-sm select-none ${aspectClass} ${
         aspectRatio === 'avatar' ? 'rounded-full' : rounded
       } ${className}`}
+      style={placeholderColor ? { backgroundColor: placeholderColor } : undefined}
     >
-      {/* Background musical note placeholder */}
-      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-neutral-800 to-neutral-900 text-neutral-600 pointer-events-none">
-        <Music className="h-2/5 w-2/5 opacity-40" />
+      {/* Skeleton layer: art-adjacent colour where we know it, neutral otherwise */}
+      <div
+        className="absolute inset-0 flex items-center justify-center pointer-events-none bg-gradient-to-br from-neutral-800 to-neutral-900"
+        style={placeholderColor ? { backgroundColor: placeholderColor } : undefined}
+      >
+        <Music className="h-2/5 w-2/5 text-neutral-600/40" />
+        {showSkeleton && (
+          <div className="absolute inset-0 animate-shimmer bg-gradient-to-r from-transparent via-white/[0.07] to-transparent" />
+        )}
       </div>
 
       {/* Actual image layer */}
@@ -137,11 +158,12 @@ export const ArtworkImage: React.FC<ArtworkImageProps> = ({
           src={currentSrc}
           alt={alt}
           decoding="async"
+          loading={priority ? 'eager' : 'lazy'}
           referrerPolicy="no-referrer"
           onError={handleError}
           onLoad={() => setIsLoaded(true)}
-          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ${
-            isLoaded ? 'opacity-100' : 'opacity-90'
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ease-out ${
+            isLoaded ? 'opacity-100' : 'opacity-0'
           }`}
         />
       )}

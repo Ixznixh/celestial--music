@@ -8,7 +8,10 @@ import {
   FolderPlus, 
   Disc, 
   User, 
-  X
+  X,
+  Download,
+  CheckCircle2,
+  Loader2
 } from 'lucide-react';
 import { ArtworkImage } from './ArtworkImage';
 
@@ -23,6 +26,12 @@ interface TrackContextMenuProps {
   onAddToPlaylist: (song: Song) => void;
   onNavigateToAlbum?: (albumId: string) => void;
   onNavigateToArtist?: (artistId: string) => void;
+  /** Download state for this track. Without these the download row stays hidden. */
+  isDownloaded?: boolean;
+  isDownloading?: boolean;
+  downloadProgress?: number;
+  onDownload?: (song: Song) => void;
+  onRemoveDownload?: (songId: string) => void;
 }
 
 export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
@@ -36,6 +45,11 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
   onAddToPlaylist,
   onNavigateToAlbum,
   onNavigateToArtist,
+  isDownloaded = false,
+  isDownloading = false,
+  downloadProgress = 0,
+  onDownload,
+  onRemoveDownload,
 }) => {
   if (!isOpen) return null;
 
@@ -152,6 +166,51 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
                 <span>Add to Playlist…</span>
               </button>
             </div>
+
+            {/* Offline download: starts here, keeps the sheet open so progress is visible */}
+            {(onDownload || onRemoveDownload) && (
+              <div className="py-1">
+                {isDownloading ? (
+                  <div className="px-3 py-2.5 rounded-xl bg-white/5">
+                    <div className="flex items-center gap-3.5 text-neutral-200 font-medium">
+                      <Loader2 className="w-5 h-5 text-neutral-300 animate-spin shrink-0" />
+                      <span className="flex-1 min-w-0 truncate">Downloading for offline…</span>
+                      <span className="text-[11px] tabular-nums text-neutral-400">
+                        {Math.max(0, Math.min(100, Math.round(downloadProgress)))}%
+                      </span>
+                    </div>
+                    <div className="mt-2 h-1 rounded-full bg-white/10 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-rose-500 transition-[width] duration-200"
+                        style={{ width: `${Math.max(0, Math.min(100, Math.round(downloadProgress)))}%` }}
+                      />
+                    </div>
+                  </div>
+                ) : isDownloaded ? (
+                  <button
+                    onClick={() => {
+                      onRemoveDownload?.(song.id);
+                      onClose();
+                    }}
+                    className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl hover:bg-white/10 active:bg-white/15 text-left transition text-neutral-200 font-medium cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                    <span className="text-emerald-300">Downloaded</span>
+                    <span className="ml-auto text-[11px] text-neutral-500">Remove</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      onDownload?.(song);
+                    }}
+                    className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl hover:bg-white/10 active:bg-white/15 text-left transition text-neutral-200 font-medium cursor-pointer"
+                  >
+                    <Download className="w-5 h-5 text-neutral-300" />
+                    <span>Download</span>
+                  </button>
+                )}
+              </div>
+            )}
 
             <div className="py-1">
               {onNavigateToAlbum && (

@@ -243,6 +243,7 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({
                   <ArtworkImage
                     src={song.artworkUrl}
                     alt={song.title}
+                    size="small"
                     className="w-11 h-11 rounded-lg shrink-0 shadow-sm"
                   />
                   <div className="min-w-0 flex-1 pr-2">

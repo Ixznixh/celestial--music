@@ -26,6 +26,7 @@ import { Song, PlaybackState, RepeatMode, AppSettings } from '../types';
 import { QueueManager } from './QueueManager';
 import { db, isDemoItem } from '../services/indexedDB';
 import { bumpPlayCount } from '../services/tasteProfile';
+import { scheduleListeningSync } from '../services/accountScope';
 import { extractYouTubeVideoId, parseDurationInSeconds } from '../utils/formatters';
 import { diagnostics } from './PlaybackDiagnostics';
 import { backgroundAudioManager } from './BackgroundAudioManager';
@@ -72,6 +73,8 @@ export class AudioPlayer {
   private isSeeking = false;
   private seekDebounceTimer: any = null;
   private streamUrlCache = new Map<string, string>();
+  /** Object URLs for downloaded tracks: the bytes live in IndexedDB, not on the network. */
+  private localAudioUrls = new Map<string, string>();
   private preloaderAudio: HTMLAudioElement | null = null;
   private lowPowerMode = false;
 
@@ -136,6 +139,19 @@ export class AudioPlayer {
 
     // 7. Restore previous state
     this.restoreSession();
+
+    // Downloads can be removed at any time (context menu, Downloads tab, clear all).
+    // Drop the matching object URLs so a deleted song stops being playable — except the
+    // one currently feeding the <audio> element, which must keep playing to the end.
+    if (typeof window !== 'undefined') {
+      window.addEventListener('celestial-downloads-changed', () => {
+        const currentSrc = this.audio?.src || '';
+        for (const [songId, url] of this.localAudioUrls) {
+          if (url !== currentSrc) URL.revokeObjectURL(url);
+          this.localAudioUrls.delete(songId);
+        }
+      });
+    }
   }
 
   /**
@@ -708,6 +724,27 @@ export class AudioPlayer {
   }
 
   /**
+   * Object URL for a track that has been downloaded to this device, or null when its
+   * bytes are not stored locally. Downloaded audio plays straight out of IndexedDB —
+   * that is what makes offline listening work, and it also makes online starts instant.
+   */
+  private async getLocalAudioUrl(song: Song): Promise<string | null> {
+    if (!song?.id) return null;
+    const warm = this.localAudioUrls.get(song.id);
+    if (warm) return warm;
+
+    try {
+      const blob = await db.getCachedTrackBlob(song.id);
+      if (!blob || blob.size === 0) return null;
+      const url = URL.createObjectURL(blob);
+      this.localAudioUrls.set(song.id, url);
+      return url;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Single source of truth for the native stream URL of a track.
    * `bustCache` forces a fresh proxy URL so a dead CDN token / failed response is not
    * reused from the HTTP cache when we recover mid-track.
@@ -748,7 +785,10 @@ export class AudioPlayer {
 
     const cleanId =
       extractYouTubeVideoId(song.id) || song.id.replace(/^(yt_liked_|yt_top_|yt_sync_)/, '').trim();
-    const url = this.buildNativeStreamUrl(song, cleanId, true);
+    // Recovery must stay on the local copy when there is one, or a stall would silently
+    // drop a downloaded track back onto the network (and fail entirely while offline).
+    const localUrl = this.localAudioUrls.get(song.id) || '';
+    const url = localUrl || this.buildNativeStreamUrl(song, cleanId, true);
 
     this.recoveringStream = true;
     this.intendedPlayState = true;
@@ -912,6 +952,8 @@ export class AudioPlayer {
     this.runWhenIdle(() => {
       db.addRecentlyPlayed(song).catch(() => {});
       bumpPlayCount(song).catch(() => {});
+      // Signed-in listeners get this play onto their own account, throttled.
+      scheduleListeningSync();
       db.cacheCurrentAndNextTrack(
         song,
         nextSong,
@@ -928,8 +970,10 @@ export class AudioPlayer {
     const isDirectBlob = song.streamUrl && (song.streamUrl.startsWith('blob:') || song.streamUrl.startsWith('data:') || song.streamUrl.startsWith('https://aac.saavncdn.com/'));
     const cachedUrl = isDirectBlob ? null : this.streamUrlCache.get(cleanId);
 
-    // Choose ultra-low-latency direct CDN stream url if available, or robust direct server proxy
-    const audioStreamUrl = this.buildNativeStreamUrl(song, cleanId);
+    // Choose ultra-low-latency direct CDN stream url if available, or robust direct server
+    // proxy — unless this track was downloaded, in which case the device already has it.
+    const localAudioUrl = await this.getLocalAudioUrl(song);
+    const audioStreamUrl = localAudioUrl || this.buildNativeStreamUrl(song, cleanId);
 
     this.isYTActive = false;
     this.audio.volume = this.state.isMuted ? 0 : this.state.volume;

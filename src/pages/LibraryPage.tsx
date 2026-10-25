@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Song, Album, Artist, Playlist, AppView } from '../types';
 import { ArtworkImage } from '../components/common/ArtworkImage';
 import { PlaylistThumbnail } from '../components/common/PlaylistThumbnail';
+import { GlassSwitch } from '../components/common/GlassSwitch';
 import { formatTime } from '../utils/formatters';
 import { useLongPress } from '../hooks/useLongPress';
+import { useDownloads, formatBytes } from '../hooks/useDownloads';
+import { isAutoDownloadEnabled, setAutoDownloadEnabled } from '../services/autoDownload';
 import { 
   ListMusic, 
   User, 
@@ -15,7 +18,9 @@ import {
   MoreHorizontal, 
   Heart, 
   Clock, 
-  Trash2
+  Trash2,
+  Download,
+  HardDrive
 } from 'lucide-react';
 
 interface LibraryPageProps {
@@ -31,7 +36,7 @@ interface LibraryPageProps {
   onDeletePlaylist: (playlistId: string) => void;
 }
 
-type LibraryTab = 'overview' | 'playlists' | 'songs' | 'albums' | 'artists';
+type LibraryTab = 'overview' | 'playlists' | 'songs' | 'albums' | 'artists' | 'downloads';
 
 export const LibraryPage: React.FC<LibraryPageProps> = ({
   onNavigate,
@@ -48,6 +53,20 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
   const [tab, setTab] = useState<LibraryTab>('overview');
 
   const { getHandlers } = useLongPress<Song>((song) => onOpenContextMenu(song));
+
+  // Downloads live in their own IndexedDB-backed collection: count, bytes and the
+  // auto-download policy are all read from the device this session is running on.
+  const downloads = useDownloads();
+  const [autoDownload, setAutoDownload] = useState(false);
+
+  useEffect(() => {
+    isAutoDownloadEnabled().then(setAutoDownload).catch(() => {});
+  }, []);
+
+  const handleAutoDownloadToggle = (enabled: boolean) => {
+    setAutoDownload(enabled);
+    setAutoDownloadEnabled(enabled).catch(() => {});
+  };
 
   return (
     <div 
@@ -69,7 +88,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
 
       {/* Navigation Tabs Pill selector */}
       <div className="flex gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-        {(['overview', 'playlists', 'songs', 'albums', 'artists'] as const).map((t) => (
+        {(['overview', 'playlists', 'songs', 'albums', 'artists', 'downloads'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -80,6 +99,9 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
             }`}
           >
             <span>{t === 'overview' ? 'Overview' : t}</span>
+            {t === 'downloads' && downloads.downloadCount > 0 && (
+              <span className="text-[10px] tabular-nums opacity-80">{downloads.downloadCount}</span>
+            )}
           </button>
         ))}
       </div>
@@ -291,6 +313,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
                       fallbackVideoId={song.id}
                       alt={song.title}
                       rounded="rounded-md"
+                      size="small"
                       className="w-10 h-10 rounded-md shrink-0 shadow-sm"
                     />
                     <div className="min-w-0 flex-1 pr-2">
@@ -370,6 +393,112 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
                   </div>
                   <p className="text-xs font-semibold text-white truncate">{artist.name}</p>
                   <p className="text-[11px] text-neutral-400 truncate">{artist.genre}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 6. DOWNLOADS VIEW — the offline collection */}
+      {tab === 'downloads' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-neutral-900/80 border border-neutral-800">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center shrink-0">
+                <HardDrive className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-white truncate">
+                  {downloads.downloadCount} {downloads.downloadCount === 1 ? 'song' : 'songs'}{' '}
+                  downloaded
+                </p>
+                <p className="text-[10px] text-neutral-400 truncate">
+                  {downloads.storageFormatted} used · plays with no connection
+                </p>
+              </div>
+            </div>
+            {downloads.downloadCount > 0 && (
+              <button
+                onClick={() => downloads.clearAllDownloads()}
+                className="px-2.5 py-1.5 rounded-full bg-white/[0.06] hover:bg-white/10 text-[11px] font-semibold text-neutral-300 active:scale-95 transition shrink-0"
+              >
+                Clear all
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-neutral-900/80 border border-neutral-800">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-white">Auto-download saved music</p>
+              <p className="text-[10px] text-neutral-400 mt-0.5 leading-relaxed">
+                Albums and playlists you save are stored for offline listening. Paused while
+                offline, and on cellular when “Download over Wi-Fi only” is on.
+              </p>
+            </div>
+            <GlassSwitch
+              checked={autoDownload}
+              onChange={handleAutoDownloadToggle}
+              ariaLabel="Auto-download saved music"
+            />
+          </div>
+
+          {downloads.downloadCount === 0 ? (
+            <div className="text-center py-16 text-neutral-400">
+              <Download className="w-10 h-10 mx-auto mb-2 opacity-40 text-neutral-500" />
+              <p className="font-semibold text-white">No Downloads Yet</p>
+              <p className="text-xs text-neutral-500 mt-1 max-w-sm mx-auto leading-relaxed">
+                Long-press any song and choose Download to keep it on this device — or turn
+                on auto-download above and save an album.
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-neutral-850 bg-neutral-900/70 rounded-xl border border-neutral-800 overflow-hidden">
+              {downloads.downloadedTracks.map(({ song, sizeBytes }) => (
+                <div
+                  key={song.id}
+                  {...getHandlers(song)}
+                  className="flex items-center justify-between p-2 pr-3 hover:bg-neutral-800/80 active:bg-neutral-800 transition cursor-pointer"
+                >
+                  <button
+                    onClick={() =>
+                      onPlaySong(
+                        song,
+                        downloads.downloadedTracks.map((track) => track.song)
+                      )
+                    }
+                    className="flex items-center gap-3 min-w-0 flex-1 text-left"
+                  >
+                    <ArtworkImage
+                      src={song.artworkUrl}
+                      fallbackVideoId={song.id}
+                      alt={song.title}
+                      rounded="rounded-md"
+                      size="small"
+                      className="w-10 h-10 rounded-md shrink-0 shadow-sm"
+                    />
+                    <div className="min-w-0 flex-1 pr-2">
+                      <p className="text-xs font-semibold text-white truncate leading-tight">
+                        {song.title}
+                      </p>
+                      <p className="text-[10px] text-neutral-400 truncate mt-0.5 leading-tight">
+                        {song.artist} · {formatBytes(sizeBytes)}
+                      </p>
+                    </div>
+                  </button>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[11px] text-neutral-500 tabular-nums">
+                      {formatTime(song.duration)}
+                    </span>
+                    <button
+                      onClick={() => downloads.removeDownload(song.id)}
+                      aria-label="Remove download"
+                      className="p-1.5 rounded-full text-neutral-400 hover:text-rose-400 transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
