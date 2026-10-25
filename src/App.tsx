@@ -48,6 +48,7 @@ export function App() {
   const [contextMenuSong, setContextMenuSong] = useState<Song | null>(null);
   const [addToPlaylistSong, setAddToPlaylistSong] = useState<Song | null>(null);
   const [isNewPlaylistOpen, setIsNewPlaylistOpen] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
@@ -293,7 +294,7 @@ export function App() {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, [history]);
 
-  // Global keyboard shortcuts (Space to toggle, Esc to dismiss modals)
+  // Global keyboard shortcuts (Space to toggle, Esc to dismiss modals, ? for shortcut guide)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore if user is typing in an input or textarea
@@ -304,8 +305,15 @@ export function App() {
       if (e.code === 'Space') {
         e.preventDefault();
         player.togglePlay();
+      } else if (e.key === '?') {
+        setIsShortcutsOpen((prev) => !prev);
+      } else if (e.key === 'ArrowRight' && !isNowPlayingOpen) {
+        player.next();
+      } else if (e.key === 'ArrowLeft' && !isNowPlayingOpen) {
+        player.previous();
       } else if (e.code === 'Escape') {
-        if (isNowPlayingOpen) setIsNowPlayingOpen(false);
+        if (isShortcutsOpen) setIsShortcutsOpen(false);
+        else if (isNowPlayingOpen) setIsNowPlayingOpen(false);
         else if (isSettingsOpen) setIsSettingsOpen(false);
         else if (contextMenuSong) setContextMenuSong(null);
         else if (addToPlaylistSong) setAddToPlaylistSong(null);
@@ -315,7 +323,7 @@ export function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [player, isNowPlayingOpen, isSettingsOpen, contextMenuSong, addToPlaylistSong, isNewPlaylistOpen]);
+  }, [player, isNowPlayingOpen, isSettingsOpen, contextMenuSong, addToPlaylistSong, isNewPlaylistOpen, isShortcutsOpen]);
 
   // Playback wrappers
   const handlePlaySong = (song: Song, contextQueue?: Song[]) => {
@@ -654,6 +662,60 @@ export function App() {
           }
         }}
       />
+
+      {/* Keyboard Shortcut Guide */}
+      <AnimatePresence>
+        {isShortcutsOpen && (
+          <>
+            <motion.div
+              key="shortcuts-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              onClick={() => setIsShortcutsOpen(false)}
+              className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm"
+            />
+            <motion.div
+              key="shortcuts-modal"
+              initial={{ opacity: 0, scale: 0.94, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 12 }}
+              transition={{ type: 'spring', damping: 26, stiffness: 380 }}
+              className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-[61] max-w-sm mx-auto bg-[#111113] border border-white/10 rounded-3xl shadow-2xl p-5 select-none"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-bold text-white">Keyboard Shortcuts</h2>
+                <button
+                  onClick={() => setIsShortcutsOpen(false)}
+                  className="text-neutral-400 hover:text-white p-1 rounded-full hover:bg-white/10 transition"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div className="space-y-1">
+                {[
+                  { keys: ['Space'], description: 'Play / Pause' },
+                  { keys: ['←'], description: 'Previous track' },
+                  { keys: ['→'], description: 'Next track' },
+                  { keys: ['Esc'], description: 'Close modal / Go back' },
+                  { keys: ['?'], description: 'Toggle this guide' },
+                ].map(({ keys, description }) => (
+                  <div key={description} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+                    <span className="text-sm text-neutral-300">{description}</span>
+                    <div className="flex items-center gap-1">
+                      {keys.map((k) => (
+                        <kbd key={k} className="px-2 py-1 rounded-lg bg-white/10 border border-white/20 text-xs font-mono text-white font-semibold shadow">{k}</kbd>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-neutral-600 mt-4 text-center">Press <kbd className="px-1 rounded bg-white/10 text-[10px] font-mono">?</kbd> anywhere to toggle</p>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
