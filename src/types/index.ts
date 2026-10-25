@@ -2,6 +2,15 @@
  * Core type definitions for Celestial Music Player
  */
 
+export interface User {
+  uid: string;
+  displayName: string | null;
+  email: string | null;
+  photoURL: string | null;
+  handle?: string;
+  channelId?: string;
+}
+
 export interface Song {
   id: string;
   title: string;

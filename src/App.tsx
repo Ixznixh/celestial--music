@@ -33,7 +33,7 @@ import { NewPlaylistModal } from './components/common/NewPlaylistModal';
 import { SpotifyImportModal } from './components/settings/SpotifyImportModal';
 import { subscribeToAuth } from './lib/firebase';
 import { ensureAccountScopeReady, onAccountScopeChange } from './services/accountScope';
-import { User } from 'firebase/auth';
+import { User } from './types';
 
 export function App() {
   // Navigation stack

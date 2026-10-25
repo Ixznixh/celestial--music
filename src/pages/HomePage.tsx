@@ -8,7 +8,7 @@ import { isDemoItem } from '../services/indexedDB';
 import { isUnknownTrack, emptyTasteProfile, loadTasteProfile, TasteProfile } from '../services/tasteProfile';
 import { composeHomeFeed } from '../services/homeFeed';
 import { ensureAccountScopeReady, onAccountScopeChange } from '../services/accountScope';
-import { User } from 'firebase/auth';
+import { User } from '../types';
 import {
   Play,
   Pause,

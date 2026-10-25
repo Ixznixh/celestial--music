@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { LogIn, LogOut, User as UserIcon, CloudCheck, Loader2, Sparkles, Youtube, Settings } from 'lucide-react';
 import { subscribeToAuth, signInWithGoogle, signOutUser, signOutYouTube } from '../../lib/firebase';
-import { User } from 'firebase/auth';
+import { User } from '../../types';
 
 // Direct YouTube OAuth functions
 import { signInWithYouTube, getYouTubeAccessToken, clearYouTubeTokens } from '../../lib/firebase';

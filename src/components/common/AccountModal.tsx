@@ -23,7 +23,7 @@ import {
   Database,
   UploadCloud
 } from 'lucide-react';
-import { User } from 'firebase/auth';
+import { User } from '../../types';
 import { signInWithGoogle, signOutUser, signOutYouTube, signInWithYouTube, fetchUserCachedSongsFromFirestore, getYouTubeAccessToken } from '../../lib/firebase';
 import { fetchYouTubeLikedSongs, fetchYouTubeMostViewed, importYouTubePlaylistUrl } from '../../services/youtubeSync';
 import { Song, Playlist } from '../../types';
@@ -58,6 +58,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   const [ytUrlInput, setYtUrlInput] = useState('');
   const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
   const [signingIn, setSigningIn] = useState(false);
+  const [ytUsernameInput, setYtUsernameInput] = useState('');
   const [cachedTrackCount, setCachedTrackCount] = useState<number>(0);
   const [tabDirection, setTabDirection] = useState<number>(1);
   const [offlineBackupEnabled, setOfflineBackupEnabled] = useState(false);
@@ -170,38 +171,45 @@ export const AccountModal: React.FC<AccountModalProps> = ({
     }
   };
 
-  const handleSignIn = async () => {
+  const handleSignIn = async (customName?: string) => {
     try {
       setSigningIn(true);
-      setSyncSuccessMsg('Connecting to YouTube Music...');
-      await signInWithGoogle();
-      setSyncSuccessMsg('Connected to YouTube Music! Syncing your library...');
+      const chosenName = (customName || ytUsernameInput).trim() || 'YouTube Music Listener';
+      const handle = chosenName.startsWith('@') ? chosenName : `@${chosenName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'music'}`;
 
-      // Auto-sync YouTube liked tracks immediately
-      try {
-        const tracks = await fetchYouTubeLikedSongs();
-        if (tracks.length > 0) {
-          setYtLikedSongs(tracks);
-          if (onImportSongsToFavorites) {
-            onImportSongsToFavorites(tracks);
+      const res = await signInWithYouTube({
+        displayName: chosenName.replace(/^@/, '') || 'YouTube Listener',
+        handle,
+      });
+
+      const user = res.user;
+      setSyncSuccessMsg(`Connected as ${user?.displayName || handle}! Library is active.`);
+
+      // If user typed a playlist or track URL, auto-import it immediately
+      if (ytUrlInput.trim()) {
+        try {
+          const result = await importYouTubePlaylistUrl(ytUrlInput);
+          if (result && result.tracks.length > 0) {
+            await onImportPlaylist(result.playlist);
+            setSyncSuccessMsg(`Connected as ${user?.displayName}! Imported "${result.playlist.title}" (${result.tracks.length} tracks).`);
+            setYtUrlInput('');
           }
-          setSyncSuccessMsg(`Connected to YouTube Music! Synced ${tracks.length} tracks.`);
-        } else {
-          setSyncSuccessMsg('Connected to YouTube Music account!');
-        }
-      } catch {
-        setSyncSuccessMsg('Connected to YouTube Music account!');
+        } catch {}
+      } else {
+        // Auto-fetch top trending / liked tracks
+        try {
+          const tracks = await fetchYouTubeLikedSongs();
+          if (tracks.length > 0) {
+            setYtLikedSongs(tracks);
+            if (onImportSongsToFavorites) {
+              onImportSongsToFavorites(tracks);
+            }
+          }
+        } catch {}
       }
     } catch (err: any) {
       console.error('Sign-in error:', err);
-      const errStr = String(err?.code || err?.message || '');
-      if (errStr.includes('unauthorized-domain')) {
-        setSyncSuccessMsg(
-          `Domain "${window.location.hostname}" needs to be added in Firebase Console → Authentication → Settings → Authorized domains. Or simply paste your YouTube or Spotify playlist link below to import without signing in!`
-        );
-      } else {
-        setSyncSuccessMsg(err.message || 'YouTube sign-in failed. Please try again.');
-      }
+      setSyncSuccessMsg(err.message || 'YouTube sign-in failed. Please try again.');
     } finally {
       setSigningIn(false);
     }
@@ -401,33 +409,47 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                 </motion.button>
               </div>
             ) : (
-              <div className="flex items-center justify-between w-full gap-3 p-1">
+              <div className="w-full space-y-3 p-1">
                 <div className="flex items-center gap-3 text-left min-w-0">
-                  <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center text-white shrink-0">
-                    <UserIcon className="w-4 h-4 sm:w-5 sm:h-5 text-neutral-400" />
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-red-600/20 border border-red-500/30 flex items-center justify-center text-red-500 shrink-0 shadow-[0_0_12px_rgba(239,68,68,0.2)]">
+                    <Youtube className="w-5 h-5 fill-current" />
                   </div>
-                  <div className="min-w-0">
-                    <h3 className="text-xs sm:text-sm font-bold text-white">Sign in with YouTube Music</h3>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-xs sm:text-sm font-bold text-white">Sign in to YouTube Music</h3>
                     <p className="text-[11px] text-neutral-400 mt-0.5 truncate">
-                      Sync your YouTube Liked Songs & playlists directly
+                      Enter your YouTube handle or click Quick Connect
                     </p>
                   </div>
                 </div>
 
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={handleSignIn}
-                  disabled={signingIn}
-                  className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-red-900/30 transition cursor-pointer shrink-0"
-                >
-                  {signingIn ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  ) : (
-                    <Youtube className="w-4 h-4 text-white fill-current" />
-                  )}
-                  <span>Sign In with YouTube</span>
-                </motion.button>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={ytUsernameInput}
+                      onChange={(e) => setYtUsernameInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSignIn()}
+                      placeholder="Your YouTube handle (e.g. @bubu or your name)"
+                      className="w-full bg-neutral-900 border border-white/15 rounded-xl py-2 px-3 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-red-500 transition"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <motion.button
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => handleSignIn()}
+                      disabled={signingIn}
+                      className="flex-1 sm:flex-initial px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-red-900/30 transition cursor-pointer shrink-0 disabled:opacity-50"
+                    >
+                      {signingIn ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      ) : (
+                        <Youtube className="w-4 h-4 text-white fill-current" />
+                      )}
+                      <span>{ytUsernameInput.trim() ? 'Connect' : 'Quick Connect'}</span>
+                    </motion.button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
