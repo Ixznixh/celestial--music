@@ -590,6 +590,7 @@ export function App() {
             onSetVolume={player.setVolume}
             onToggleMute={player.toggleMute}
             onToggleShuffle={player.toggleShuffle}
+            onReshuffle={player.reshuffle}
             onCycleRepeat={player.cycleRepeatMode}
             onToggleFavorite={library.toggleFavorite}
             onSelectTrack={(song, idx) => player.playTrack(song, player.queue)}

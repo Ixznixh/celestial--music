@@ -51,6 +51,7 @@ export class QueueManager {
   private currentSong: Song | null = null;
   private userQueue: Song[] = [];
   private contextQueue: Song[] = [];
+  private originalContextQueue: Song[] = [];
   private autoplayQueue: Song[] = [];
   private history: Song[] = [];
   private shuffle: boolean = false;
@@ -144,10 +145,12 @@ export class QueueManager {
       filteredRemaining.push(item);
     }
 
+    this.originalContextQueue = [...filteredRemaining];
+
     if (this.shuffle && filteredRemaining.length > 0) {
-      this.contextQueue = this.shuffleArray(filteredRemaining);
+      this.contextQueue = this.shuffleArray([...filteredRemaining]);
     } else {
-      this.contextQueue = filteredRemaining;
+      this.contextQueue = [...filteredRemaining];
     }
 
     this.userQueue = [];
@@ -409,13 +412,30 @@ export class QueueManager {
 
   public toggleShuffle(): boolean {
     this.shuffle = !this.shuffle;
-    if (this.contextQueue.length > 1) {
-      this.contextQueue = this.shuffle
-        ? this.shuffleArray(this.contextQueue)
-        : [...this.contextQueue];
+    if (this.shuffle) {
+      if (this.contextQueue.length > 1) {
+        this.contextQueue = this.shuffleArray([...this.contextQueue]);
+      }
+    } else {
+      // Restore original unshuffled sequence for remaining unplayed tracks
+      const playedIds = new Set(this.history.map((s) => s.id));
+      if (this.currentSong) playedIds.add(this.currentSong.id);
+      const remainingOriginal = this.originalContextQueue.filter((s) => !playedIds.has(s.id));
+      if (remainingOriginal.length > 0) {
+        this.contextQueue = remainingOriginal;
+      }
     }
     this.persistToStorage();
     return this.shuffle;
+  }
+
+  public reshuffle(): boolean {
+    if (this.contextQueue.length > 1) {
+      this.contextQueue = this.shuffleArray([...this.contextQueue]);
+      this.persistToStorage();
+      return true;
+    }
+    return false;
   }
 
   public cycleRepeat(): RepeatMode {
@@ -443,6 +463,7 @@ export class QueueManager {
   // --- Persistence ---
 
   private persistToStorage(): void {
+    if (typeof localStorage === 'undefined') return;
     try {
       if (this.currentSong) {
         localStorage.setItem(STORAGE_CURRENT_KEY, JSON.stringify(this.currentSong));
@@ -460,6 +481,7 @@ export class QueueManager {
   }
 
   private restoreFromStorage(): void {
+    if (typeof localStorage === 'undefined') return;
     try {
       const savedCurrent = localStorage.getItem(STORAGE_CURRENT_KEY);
       const savedUser = localStorage.getItem(STORAGE_USER_QUEUE_KEY);

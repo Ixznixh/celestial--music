@@ -63,6 +63,7 @@ interface NowPlayingModalProps {
   onSetVolume: (volume: number) => void;
   onToggleMute: () => void;
   onToggleShuffle: () => void;
+  onReshuffle?: () => void;
   onCycleRepeat: () => void;
   onToggleFavorite: (song: Song) => void;
   onSelectTrack: (song: Song, index: number) => void;
@@ -105,6 +106,7 @@ export const NowPlayingModal: React.FC<NowPlayingModalProps> = ({
   onSetVolume,
   onToggleMute,
   onToggleShuffle,
+  onReshuffle,
   onCycleRepeat,
   onToggleFavorite,
   onSelectTrack,
@@ -452,115 +454,46 @@ export const NowPlayingModal: React.FC<NowPlayingModalProps> = ({
         </div>
       </header>
 
-      {/* Main Content: Artwork, Lyrics, or Queue View */}
+      {/* Main Content: Album Artwork */}
       <main className="relative z-10 flex-1 flex flex-col justify-center px-4 sm:px-8 min-h-0 py-1 sm:py-2 overflow-hidden">
-        <AnimatePresence mode="wait" initial={false}>
-          {activeTab === 'lyrics' ? (
-            <motion.div 
-              key="modal-lyrics-view"
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.98 }}
-              transition={{ duration: 0.2 }}
-              className="w-full flex-1 h-full min-h-0 rounded-3xl overflow-hidden bg-[#131316] border border-white/10 shadow-2xl relative flex flex-col"
-            >
-              <LyricsView
-                lines={currentSong.lyrics || fetchedLyrics}
-                isSynced={isLyricsSynced}
-                isLoading={isLoadingLyrics}
-                providerName={providerName}
-                providerId={activeProviderId}
-                currentTime={displayTime}
-                isPlaying={isPlaying}
-                onSeek={onSeek}
-                onOpenProviderModal={() => setIsLyricsProviderOpen(true)}
-                syncedLyrics={settings.syncedLyrics ?? true}
-                blurUnfocusedLyrics={settings.blurUnfocusedLyrics ?? false}
-                lowPowerMode={settings.lowPowerMode ?? false}
-              />
-            </motion.div>
-          ) : activeTab === 'queue' ? (
-            <motion.div
-              key="modal-queue-view"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 15 }}
-              transition={{ duration: 0.2 }}
-              className="w-full flex-1 h-full min-h-0 rounded-3xl overflow-hidden bg-[#131316] border border-white/10 shadow-2xl flex flex-col"
-            >
-              <QueueView
-                queue={queue}
-                queueIndex={queueIndex}
-                currentSong={currentSong}
-                userQueue={userQueue}
-                suggestionsQueue={suggestionsQueue}
-                isLoadingSuggestions={isLoadingSuggestions}
-                onSelectTrack={(song, idx) => {
-                  if (onPlayQueueIndex) {
-                    onPlayQueueIndex(idx);
-                  } else {
-                    onSelectTrack(song, idx);
-                  }
-                }}
-                onRemoveTrack={onRemoveFromQueue}
-                onReorder={onReorderQueue}
-                onSetUpcomingTracks={onSetUpcomingTracks}
-                onClearQueue={onClearQueue}
-                onClearUpcoming={onClearUpcoming}
-                onClearUserQueue={onClearUserQueue}
-                onClearAutoplayQueue={onClearAutoplayQueue}
-                onLoadMoreSuggestions={onLoadMoreSuggestions}
-                onClose={() => setActiveTab('artwork')}
-              />
-            </motion.div>
-          ) : (
-            <motion.div 
-              key="modal-artwork-view"
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.96 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col items-center justify-center my-auto py-1 sm:py-2 touch-none"
-            >
-              <motion.div 
-                drag
-                dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
-                dragElastic={{ top: 0.1, bottom: 0.45, left: 0.35, right: 0.35 }}
-                onDragEnd={handleArtworkDragEnd}
-                whileTap={{ scale: 0.98 }}
-                animate={{
-                  scale: isPlaying ? 1 : 0.92,
-                  boxShadow: isPlaying 
-                    ? `0 24px 60px -10px rgba(${palette.glowRgb}, 0.5), 0 12px 30px -8px rgba(0,0,0,0.85)` 
-                    : `0 10px 30px -8px rgba(${palette.glowRgb}, 0.25), 0 6px 18px -6px rgba(0,0,0,0.5)`
-                }}
-                transition={{ type: 'spring', damping: 20, stiffness: 200 }}
-                className="w-full max-w-[min(72vw,300px,34vh)] md:max-w-[min(45vw,380px,42vh)] aspect-square rounded-3xl overflow-hidden cursor-grab active:cursor-grabbing relative"
+        <div className="flex flex-col items-center justify-center my-auto py-1 sm:py-2 touch-none">
+          <motion.div 
+            drag
+            dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+            dragElastic={{ top: 0.1, bottom: 0.45, left: 0.35, right: 0.35 }}
+            onDragEnd={handleArtworkDragEnd}
+            whileTap={{ scale: 0.98 }}
+            animate={{
+              scale: isPlaying ? 1 : 0.92,
+              boxShadow: isPlaying 
+                ? `0 24px 60px -10px rgba(${palette.glowRgb}, 0.5), 0 12px 30px -8px rgba(0,0,0,0.85)` 
+                : `0 10px 30px -8px rgba(${palette.glowRgb}, 0.25), 0 6px 18px -6px rgba(0,0,0,0.5)`
+            }}
+            transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+            className="w-full max-w-[min(72vw,300px,34vh)] md:max-w-[min(45vw,380px,42vh)] aspect-square rounded-3xl overflow-hidden cursor-grab active:cursor-grabbing relative"
+          >
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={`artwork-${currentSong.id}`}
+                initial={{ opacity: 0, scale: 0.92 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.92 }}
+                transition={{ duration: 0.22 }}
+                className="w-full h-full"
               >
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.div
-                    key={`artwork-${currentSong.id}`}
-                    initial={{ opacity: 0, scale: 0.92 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.92 }}
-                    transition={{ duration: 0.22 }}
-                    className="w-full h-full"
-                  >
-                    <ArtworkImage
-                      src={currentSong.artworkUrl}
-                      fallbackVideoId={currentSong.id}
-                      alt={currentSong.title}
-                      rounded="rounded-3xl"
-                      priority
-                      className="w-full h-full border border-white/10 ring-1 ring-white/5 object-cover"
-                      size="full"
-                    />
-                  </motion.div>
-                </AnimatePresence>
+                <ArtworkImage
+                  src={currentSong.artworkUrl}
+                  fallbackVideoId={currentSong.id}
+                  alt={currentSong.title}
+                  rounded="rounded-3xl"
+                  priority
+                  className="w-full h-full border border-white/10 ring-1 ring-white/5 object-cover"
+                  size="full"
+                />
               </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            </AnimatePresence>
+          </motion.div>
+        </div>
       </main>
 
       {/* Bottom Controls Area - Auto-scaled for all phone heights */}
@@ -914,6 +847,87 @@ export const NowPlayingModal: React.FC<NowPlayingModalProps> = ({
               </motion.button>
             </div>
           </footer>
+
+          {/* Sliding Bottom Sheet Drawer: Queue or Lyrics Overlay */}
+          <AnimatePresence>
+            {activeTab !== 'artwork' && (
+              <>
+                {/* Backdrop over visible upper area */}
+                <motion.div
+                  key="modal-sheet-backdrop"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  onClick={() => setActiveTab('artwork')}
+                  className="absolute inset-0 bg-black/45 backdrop-blur-[2px] z-30 cursor-pointer"
+                />
+
+                {/* Bottom Sheet Drawer */}
+                <motion.div
+                  key={`modal-sheet-${activeTab}`}
+                  initial={{ y: '100%' }}
+                  animate={{ y: 0 }}
+                  exit={{ y: '100%' }}
+                  transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+                  className="absolute inset-x-0 bottom-0 top-[20vh] sm:top-[22vh] z-40 max-w-2xl mx-auto rounded-t-[32px] sm:rounded-t-[36px] overflow-hidden border-t border-white/10 shadow-2xl flex flex-col bg-[#181818]/95 backdrop-blur-2xl"
+                >
+                  {activeTab === 'queue' ? (
+                    <QueueView
+                      queue={queue}
+                      queueIndex={queueIndex}
+                      currentSong={currentSong}
+                      userQueue={userQueue}
+                      suggestionsQueue={suggestionsQueue}
+                      isLoadingSuggestions={isLoadingSuggestions}
+                      onSelectTrack={(song, idx) => {
+                        if (onPlayQueueIndex) {
+                          onPlayQueueIndex(idx);
+                        } else {
+                          onSelectTrack(song, idx);
+                        }
+                      }}
+                      onRemoveTrack={onRemoveFromQueue}
+                      onReorder={onReorderQueue}
+                      onSetUpcomingTracks={onSetUpcomingTracks}
+                      onClearQueue={onClearQueue}
+                      onClearUpcoming={onClearUpcoming}
+                      onClearUserQueue={onClearUserQueue}
+                      onClearAutoplayQueue={onClearAutoplayQueue}
+                      onLoadMoreSuggestions={onLoadMoreSuggestions}
+                      onClose={() => setActiveTab('artwork')}
+                      isPlaying={isPlaying}
+                      onTogglePlay={onTogglePlay}
+                      shuffle={shuffle}
+                      onToggleShuffle={onToggleShuffle}
+                      onReshuffle={onReshuffle}
+                      repeat={repeat}
+                      onCycleRepeat={onCycleRepeat}
+                      contextTitle={currentSong.album || currentSong.artist || 'DMK-PAYALUGA'}
+                      sleepTimerMinutes={sleepTimerMinutes}
+                      onOpenSleepTimer={() => setShowSleepPicker(true)}
+                    />
+                  ) : (
+                    <LyricsView
+                      lines={currentSong.lyrics || fetchedLyrics}
+                      isSynced={isLyricsSynced}
+                      isLoading={isLoadingLyrics}
+                      providerName={providerName}
+                      providerId={activeProviderId}
+                      currentTime={displayTime}
+                      isPlaying={isPlaying}
+                      onSeek={onSeek}
+                      onOpenProviderModal={() => setIsLyricsProviderOpen(true)}
+                      syncedLyrics={settings?.syncedLyrics ?? true}
+                      blurUnfocusedLyrics={settings?.blurUnfocusedLyrics ?? false}
+                      lowPowerMode={settings?.lowPowerMode ?? false}
+                      onClose={() => setActiveTab('artwork')}
+                    />
+                  )}
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
         </motion.div>
 
         <EqualizerModal

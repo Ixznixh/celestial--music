@@ -1,25 +1,23 @@
 import React, { useState } from 'react';
-import { Song } from '../../types';
+import { Song, RepeatMode } from '../../types';
 import { 
   X, 
   Trash2, 
-  ArrowUp, 
-  ArrowDown, 
+  Play, 
+  Pause, 
+  Shuffle, 
+  Repeat, 
+  Repeat1, 
+  Timer, 
+  Menu, 
   Sparkles, 
   Loader2, 
   History, 
   ChevronDown, 
   ChevronUp,
-  Music2,
-  ListPlus,
   RefreshCw,
-  Play,
-  HardDrive,
-  GripVertical,
   Radio,
-  SlidersHorizontal,
-  Flame,
-  Music
+  SlidersHorizontal
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { ArtworkImage } from '../common/ArtworkImage';
@@ -43,6 +41,18 @@ export interface QueueViewProps {
   onLoadMoreSuggestions?: () => void;
   onClose?: () => void;
   className?: string;
+
+  // Modern Spotify Queue screenshot controls:
+  isPlaying?: boolean;
+  onTogglePlay?: () => void;
+  shuffle?: boolean;
+  onToggleShuffle?: () => void;
+  onReshuffle?: () => void;
+  repeat?: RepeatMode;
+  onCycleRepeat?: () => void;
+  contextTitle?: string;
+  sleepTimerMinutes?: number | null;
+  onOpenSleepTimer?: () => void;
 }
 
 function formatDuration(seconds?: number): string {
@@ -70,41 +80,33 @@ export const QueueView: React.FC<QueueViewProps> = ({
   onLoadMoreSuggestions,
   onClose,
   className = '',
+  isPlaying = false,
+  onTogglePlay,
+  shuffle = false,
+  onToggleShuffle,
+  onReshuffle,
+  repeat = 'off',
+  onCycleRepeat,
+  contextTitle,
+  sleepTimerMinutes = null,
+  onOpenSleepTimer,
 }) => {
+  const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [showHistory, setShowHistory] = useState<boolean>(false);
   const [selectedGenreFilter, setSelectedGenreFilter] = useState<string>('all');
 
-  // Spotify-style Queue Partitioning:
-  // - History: tracks played before current index
-  // - Now Playing: current track with genre badge
-  // - User Queue: explicitly queued tracks ("Add to queue" / "Play Next")
-  // - Radio / Autoplay Queue: genre-matched continuous queue
   const safeIndex = queueIndex >= 0 ? queueIndex : 0;
   const historyTracks = queue.slice(0, safeIndex);
   const upcomingTracks = queue.slice(safeIndex + 1);
-  const totalUpcoming = upcomingTracks.length;
 
   const nowPlayingGenre = currentSong ? detectSongGenre(currentSong) : 'Pop & Soundtracks';
-  const nowPlayingTheme = getGenreTheme(nowPlayingGenre);
-
-  // Differentiate user-added queue from Spotify-style radio suggestions
-  const hasUserQueue = Array.isArray(userQueue) && userQueue.length > 0;
-  const userQueueIds = new Set(userQueue.map((s) => s.id));
-  
-  const userUpcoming = hasUserQueue
-    ? upcomingTracks.filter((s) => userQueueIds.has(s.id))
-    : [];
-  const radioUpcoming = hasUserQueue
-    ? upcomingTracks.filter((s) => !userQueueIds.has(s.id))
-    : upcomingTracks;
-
-  // Filter radio tracks by genre if a genre chip is selected
-  const displayRadioTracks = selectedGenreFilter === 'all'
-    ? radioUpcoming
-    : radioUpcoming.filter((s) => detectSongGenre(s) === selectedGenreFilter);
 
   // Available unique genres in upcoming queue for filter pills
   const availableGenres: string[] = Array.from(new Set(upcomingTracks.map((s) => detectSongGenre(s))));
+
+  const displayTracks = selectedGenreFilter === 'all'
+    ? upcomingTracks
+    : upcomingTracks.filter((s) => detectSongGenre(s) === selectedGenreFilter);
 
   const handleReorderUpcoming = (newUpcoming: Song[]) => {
     if (onSetUpcomingTracks) {
@@ -120,79 +122,68 @@ export const QueueView: React.FC<QueueViewProps> = ({
     }
   };
 
+  const displayContext = contextTitle || currentSong?.album || currentSong?.artist || 'DMK-PAYALUGA';
+
   return (
-    <div className={`flex flex-col h-full w-full min-h-0 text-white select-none ${className}`}>
-      {/* Sticky Header inside Queue View */}
-      <div className="sticky top-0 z-20 flex items-center justify-between px-4 sm:px-6 py-3 bg-[#0a0a0c] border-b border-white/10 shrink-0">
-        <div className="flex items-baseline gap-2 min-w-0">
-          <h3 className="text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-2 truncate">
-            <span>Queue</span>
-            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30">
-              Spotify Mode
-            </span>
-          </h3>
-          <span className="text-xs font-medium text-neutral-400 truncate">
-            • {totalUpcoming} track{totalUpcoming === 1 ? '' : 's'}
-          </span>
+    <div className={`flex flex-col h-full w-full min-h-0 bg-[#181818]/94 backdrop-blur-2xl text-white select-none relative ${className}`}>
+      {/* Top Drag Handle Bar (Clicking or dragging dismisses back to artwork) */}
+      <div 
+        className="w-full flex items-center justify-center pt-2.5 pb-2 cursor-pointer shrink-0 touch-none group"
+        onClick={onClose}
+        title="Swipe down to dismiss"
+      >
+        <div className="w-10 h-1 rounded-full bg-white/20 group-hover:bg-white/40 transition-colors" />
+      </div>
+
+      {/* Header: Title + Context Info & Edit Mode Toggle */}
+      <div className="flex items-center justify-between px-5 pt-0.5 pb-3 shrink-0 border-b border-white/5">
+        <div className="min-w-0 pr-3">
+          <h2 className="text-xl font-bold text-white tracking-tight leading-tight">Queue</h2>
+          <p className="text-xs text-neutral-400 font-medium truncate mt-0.5">
+            Playing {displayContext}
+          </p>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          {/* Refresh Suggestions Button */}
+        <div className="flex items-center gap-2 shrink-0">
           {onLoadMoreSuggestions && (
             <motion.button
               whileTap={{ scale: 0.9 }}
-              whileHover={{ scale: 1.04 }}
               onClick={onLoadMoreSuggestions}
               disabled={isLoadingSuggestions}
-              title="Add more genre-matched tracks"
-              className="px-2.5 sm:px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-rose-300 font-medium flex items-center gap-1.5 transition disabled:opacity-50 shadow-sm cursor-pointer"
+              title="Add more songs"
+              className="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white transition cursor-pointer"
             >
               {isLoadingSuggestions ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-400" />
+                <Loader2 className="w-4 h-4 animate-spin text-[#1ed760]" />
               ) : (
-                <RefreshCw className="w-3.5 h-3.5 text-rose-400" />
+                <RefreshCw className="w-4 h-4" />
               )}
-              <span className="hidden sm:inline">Add More</span>
             </motion.button>
           )}
 
-          {/* Clear Button */}
-          {totalUpcoming > 0 && (
-            <motion.button
-              whileTap={{ scale: 0.9 }}
-              whileHover={{ scale: 1.04 }}
-              onClick={onClearUpcoming || onClearQueue}
-              title="Clear upcoming queue"
-              className="px-2.5 sm:px-3 py-1.5 rounded-full bg-white/5 hover:bg-rose-500/15 border border-white/10 hover:border-rose-500/30 text-xs font-medium text-neutral-300 hover:text-rose-300 transition flex items-center gap-1.5 shadow-sm cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Clear</span>
-            </motion.button>
-          )}
-
-          {/* Close / Return Button */}
-          {onClose && (
-            <motion.button
-              whileTap={{ scale: 0.88 }}
-              whileHover={{ scale: 1.08 }}
-              onClick={onClose}
-              aria-label="Close Queue"
-              className="p-1.5 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition ml-0.5 cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </motion.button>
-          )}
+          <button
+            onClick={() => {
+              triggerHaptic();
+              setIsEditMode(!isEditMode);
+            }}
+            className={`px-4 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer ${
+              isEditMode 
+                ? 'bg-white text-black shadow-md' 
+                : 'bg-white/10 hover:bg-white/15 text-white border border-white/5'
+            }`}
+          >
+            {isEditMode ? 'Done' : 'Edit'}
+          </button>
         </div>
       </div>
 
-      {/* Spotify-style Genre & Mood Filter Bar */}
-      {availableGenres.length > 1 && (
-        <div className="flex items-center gap-1.5 px-4 sm:px-6 py-2 bg-black/60 border-b border-white/5 overflow-x-auto no-scrollbar shrink-0 text-xs">
+      {/* Optional Genre Filter Bar (when edit mode is off and multiple genres exist) */}
+      {!isEditMode && availableGenres.length > 2 && (
+        <div className="flex items-center gap-1.5 px-5 py-2 bg-black/30 border-b border-white/5 overflow-x-auto no-scrollbar shrink-0 text-xs">
           <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1 shrink-0 mr-1">
             <SlidersHorizontal className="w-3 h-3" />
             Genre:
           </span>
-
           <button
             onClick={() => setSelectedGenreFilter('all')}
             className={`px-2.5 py-1 rounded-full text-xs font-medium transition cursor-pointer shrink-0 ${
@@ -201,369 +192,201 @@ export const QueueView: React.FC<QueueViewProps> = ({
                 : 'bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10'
             }`}
           >
-            All Tracks ({totalUpcoming})
+            All ({upcomingTracks.length})
           </button>
-
           {availableGenres.map((genre) => {
-            const theme = getGenreTheme(genre);
             const isSelected = selectedGenreFilter === genre;
             return (
               <button
                 key={genre}
                 onClick={() => setSelectedGenreFilter(isSelected ? 'all' : genre)}
-                className={`px-2.5 py-1 rounded-full text-xs font-medium transition cursor-pointer shrink-0 flex items-center gap-1.5 border ${
+                className={`px-2.5 py-1 rounded-full text-xs font-medium transition cursor-pointer shrink-0 ${
                   isSelected
-                    ? `${theme.bg} ${theme.color} ${theme.border} font-bold shadow-sm`
-                    : 'bg-white/5 text-neutral-400 hover:text-white border-transparent hover:bg-white/10'
+                    ? 'bg-[#1ed760] text-black font-bold shadow-sm'
+                    : 'bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10'
                 }`}
               >
-                <span>{theme.emoji}</span>
-                <span>{genre}</span>
+                {genre}
               </button>
             );
           })}
         </div>
       )}
 
-      {/* Scrollable Container */}
-      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-6 overscroll-contain">
-        {/* 1. NOW PLAYING CARD WITH GENRE BADGE */}
+      {/* Scrollable Track List Container */}
+      <div className="flex-1 overflow-y-auto px-4 py-2 space-y-1.5 overscroll-contain no-scrollbar">
+        {/* Current Playing Track (Spotify Green Highlight & White Circle Play Button) */}
         {currentSong && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-[11px] font-bold uppercase tracking-widest text-rose-400 flex items-center gap-1.5">
-                <Music2 className="w-3.5 h-3.5" />
-                Now Playing
-              </span>
-
-              {/* Genre badge pill */}
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${nowPlayingTheme.bg} ${nowPlayingTheme.color} ${nowPlayingTheme.border} flex items-center gap-1 shadow-sm`}>
-                <span>{nowPlayingTheme.emoji}</span>
-                <span>{nowPlayingGenre}</span>
-              </span>
-            </div>
-
-            <motion.div
-              layout
-              initial={{ scale: 0.98, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="p-3.5 rounded-2xl bg-gradient-to-r from-rose-950/40 via-neutral-900/90 to-neutral-900/90 border border-rose-500/30 flex items-center gap-3.5 shadow-xl relative overflow-hidden group"
-            >
-              <div className="absolute -left-10 -top-10 w-24 h-24 bg-rose-500/10 rounded-full pointer-events-none" />
-
+          <div className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] transition group mb-1">
+            <div className="flex items-center gap-3 min-w-0 flex-1 pr-3">
               <ArtworkImage
                 src={currentSong.artworkUrl}
                 alt={currentSong.title}
                 size="small"
-                className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl shrink-0 shadow-lg border border-white/10"
+                className="w-12 h-12 rounded-lg shrink-0 shadow-md border border-white/10 object-cover"
                 fallbackVideoId={currentSong.id}
               />
-
               <div className="min-w-0 flex-1">
-                <p className="text-sm sm:text-base font-bold text-white truncate leading-tight">
-                  {currentSong.title}
-                </p>
-                <p className="text-xs sm:text-sm text-neutral-300 truncate mt-0.5">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {isPlaying ? (
+                    <div className="flex items-end gap-0.5 h-3 px-0.5 shrink-0">
+                      {[0.3, 0.9, 0.6].map((_, idx) => (
+                        <motion.span
+                          key={idx}
+                          className="w-0.5 bg-[#1ed760] rounded-full"
+                          animate={{ height: ['20%', '100%', '35%', '90%', '20%'] }}
+                          transition={{ repeat: Infinity, duration: 0.9, ease: 'easeInOut', delay: idx * 0.15 }}
+                          style={{ minHeight: '3px' }}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-[#1ed760] font-bold text-xs shrink-0">•</span>
+                  )}
+                  <p className="text-sm font-semibold text-[#1ed760] truncate leading-tight">
+                    {currentSong.title}
+                  </p>
+                </div>
+                <p className="text-xs text-neutral-400 truncate mt-0.5 pl-0.5">
                   {currentSong.artist}
                 </p>
-                <div className="flex items-center gap-2 mt-1.5">
-                  <span className="text-[11px] text-neutral-400 font-mono">
-                    {formatDuration(currentSong.duration)}
-                  </span>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-[10px] text-emerald-300 font-medium">
-                    <Radio className="w-2.5 h-2.5 text-emerald-400 animate-pulse" />
-                    Spotify Song Radio
-                  </span>
-                </div>
               </div>
+            </div>
 
-              {/* Animated Equalizer */}
-              <div className="flex items-end gap-1 h-5 px-2 shrink-0">
-                {[0.3, 0.8, 0.5, 0.9].map((_, idx) => (
-                  <motion.span
-                    key={idx}
-                    className="w-1 bg-rose-500 rounded-full"
-                    animate={{
-                      height: ['20%', '100%', '40%', '85%', '20%'],
-                    }}
-                    transition={{
-                      repeat: Infinity,
-                      duration: 1.1,
-                      ease: 'easeInOut',
-                      delay: idx * 0.18,
-                    }}
-                    style={{ minHeight: '4px' }}
-                  />
-                ))}
-              </div>
-            </motion.div>
+            {/* Circular White Play/Pause Button */}
+            <motion.button
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerHaptic();
+                onTogglePlay?.();
+              }}
+              className="w-9 h-9 rounded-full bg-white text-black flex items-center justify-center shrink-0 shadow-lg hover:bg-neutral-200 transition cursor-pointer"
+              title={isPlaying ? 'Pause' : 'Play'}
+            >
+              {isPlaying ? (
+                <Pause className="w-4.5 h-4.5 fill-current" />
+              ) : (
+                <Play className="w-4.5 h-4.5 fill-current ml-0.5" />
+              )}
+            </motion.button>
           </div>
         )}
 
-        {/* Suggestions Loading Notification */}
-        <AnimatePresence>
-          {isLoadingSuggestions && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-medium"
+        {/* Edit Mode Bulk Actions */}
+        {isEditMode && upcomingTracks.length > 0 && (
+          <div className="flex items-center justify-between px-2 py-1.5 bg-neutral-900/60 rounded-xl border border-white/5 mb-2">
+            <span className="text-xs text-neutral-400">
+              {upcomingTracks.length} upcoming track{upcomingTracks.length === 1 ? '' : 's'}
+            </span>
+            <button
+              onClick={() => {
+                triggerHaptic();
+                onClearUpcoming ? onClearUpcoming() : onClearQueue();
+              }}
+              className="text-xs text-rose-400 hover:text-rose-300 font-medium flex items-center gap-1 cursor-pointer"
             >
-              <Loader2 className="w-4 h-4 animate-spin text-rose-400 shrink-0" />
-              <span>Fetching genre-matched tracks for {nowPlayingGenre}...</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Clear Upcoming</span>
+            </button>
+          </div>
+        )}
 
-        {/* 2. NEXT IN QUEUE (USER QUEUED TRACKS) */}
-        {userUpcoming.length > 0 && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
-                <ListPlus className="w-3.5 h-3.5" />
-                Next In Queue ({userUpcoming.length})
-              </span>
-              {onClearUserQueue && (
-                <button
-                  onClick={onClearUserQueue}
-                  className="text-[11px] text-neutral-400 hover:text-rose-400 transition cursor-pointer"
+        {/* Upcoming List with Drag Reordering */}
+        {displayTracks.length === 0 ? (
+          <div className="text-center py-12 px-4 rounded-2xl border border-dashed border-white/10 my-4">
+            <Sparkles className="w-7 h-7 text-[#1ed760] mx-auto mb-2 animate-pulse" />
+            <p className="text-sm font-semibold text-white">Queue is empty</p>
+            <p className="text-xs text-neutral-400 mt-1 max-w-xs mx-auto">
+              Add songs from any playlist or fetch dynamic recommendations.
+            </p>
+            {onLoadMoreSuggestions && (
+              <button
+                onClick={onLoadMoreSuggestions}
+                disabled={isLoadingSuggestions}
+                className="mt-3 px-4 py-2 rounded-full bg-[#1ed760] text-black text-xs font-bold transition hover:scale-105 active:scale-95 shadow-lg cursor-pointer"
+              >
+                Fetch Recommendations
+              </button>
+            )}
+          </div>
+        ) : (
+          <Reorder.Group
+            axis="y"
+            values={upcomingTracks}
+            onReorder={handleReorderUpcoming}
+            className="space-y-1"
+          >
+            {displayTracks.map((song, i) => {
+              const effectiveIdx = safeIndex + 1 + i;
+              return (
+                <Reorder.Item
+                  key={song.id}
+                  value={song}
+                  onDragStart={triggerHaptic}
+                  whileDrag={{
+                    scale: 1.02,
+                    boxShadow: '0 12px 30px rgba(0,0,0,0.8)',
+                    backgroundColor: 'rgba(255,255,255,0.08)',
+                  }}
+                  transition={{ type: 'spring', damping: 25, stiffness: 280 }}
+                  className="group flex items-center justify-between p-2 rounded-xl hover:bg-white/[0.04] active:bg-white/[0.08] transition cursor-pointer select-none"
+                  onClick={() => onSelectTrack(song, effectiveIdx)}
                 >
-                  Clear Queue
-                </button>
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              {userUpcoming.map((song, i) => {
-                const genre = detectSongGenre(song);
-                const theme = getGenreTheme(genre);
-                return (
-                  <div
-                    key={`user-${song.id}-${i}`}
-                    className="flex items-center justify-between p-2 sm:p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/15 transition group"
-                  >
-                    <button
-                      onClick={() => onSelectTrack(song, safeIndex + 1 + i)}
-                      className="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer"
-                    >
-                      <ArtworkImage
-                        src={song.artworkUrl}
-                        alt={song.title}
-                        size="small"
-                        className="w-10 h-10 rounded-lg shrink-0 border border-white/10"
-                        fallbackVideoId={song.id}
-                      />
-                      <div className="min-w-0 flex-1 pr-2">
-                        <p className="text-sm font-semibold text-white truncate">{song.title}</p>
-                        <p className="text-xs text-neutral-400 truncate">{song.artist}</p>
-                      </div>
-                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${theme.bg} ${theme.color} ${theme.border} shrink-0 hidden sm:inline`}>
-                        {theme.emoji} {genre}
-                      </span>
-                    </button>
-                    <button
-                      onClick={() => onRemoveTrack(safeIndex + 1 + i)}
-                      className="p-1.5 rounded-lg text-neutral-500 hover:text-rose-400 transition cursor-pointer"
-                      title="Remove from queue"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
+                  <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
+                    <ArtworkImage
+                      src={song.artworkUrl}
+                      alt={song.title}
+                      size="small"
+                      className="w-12 h-12 rounded-lg shrink-0 shadow-sm border border-white/5 object-cover bg-neutral-900"
+                      fallbackVideoId={song.id}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-white group-hover:text-neutral-100 transition truncate leading-tight">
+                        {song.title}
+                      </p>
+                      <p className="text-xs text-neutral-400 truncate mt-0.5">
+                        {song.artist}
+                      </p>
+                    </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
-        {/* 3. NEXT FROM SONG RADIO (GENRE & MOOD MATCHED QUEUE) */}
-        <div className="space-y-2.5">
-          <div className="flex items-center justify-between px-1">
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-                <Radio className="w-3.5 h-3.5 text-rose-400" />
-                {currentSong ? `Next from: ${currentSong.artist} Radio` : 'Up Next'}
-              </span>
-              <p className="text-[11px] text-neutral-400 mt-0.5">
-                Playing songs with matching genre ({nowPlayingGenre})
-              </p>
-            </div>
-          </div>
-
-          {displayRadioTracks.length === 0 ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="text-center py-10 px-4 rounded-2xl border border-dashed border-neutral-800 bg-neutral-900/40"
-            >
-              <Sparkles className="w-8 h-8 text-rose-400/70 mx-auto mb-2.5 animate-pulse" />
-              <p className="text-sm font-semibold text-neutral-200">No tracks match "{selectedGenreFilter}"</p>
-              <p className="text-xs text-neutral-500 mt-1 max-w-xs mx-auto">
-                Select "All Tracks" or tap below to fetch more recommendations.
-              </p>
-              {onLoadMoreSuggestions && (
-                <motion.button
-                  whileTap={{ scale: 0.94 }}
-                  whileHover={{ scale: 1.04 }}
-                  onClick={onLoadMoreSuggestions}
-                  disabled={isLoadingSuggestions}
-                  className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-rose-600 hover:bg-rose-500 text-xs font-semibold text-white transition shadow-lg disabled:opacity-50 cursor-pointer"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Fetch New Songs</span>
-                </motion.button>
-              )}
-            </motion.div>
-          ) : (
-            <Reorder.Group 
-              axis="y" 
-              values={upcomingTracks} 
-              onReorder={handleReorderUpcoming}
-              className="space-y-1.5"
-            >
-              {displayRadioTracks.map((song, i) => {
-                const effectiveIdx = safeIndex + 1 + i;
-                const genre = detectSongGenre(song);
-                const theme = getGenreTheme(genre);
-
-                return (
-                  <Reorder.Item
-                    key={song.id}
-                    value={song}
-                    onDragStart={triggerHaptic}
-                    whileDrag={{ 
-                      scale: 1.02, 
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
-                      backgroundColor: 'rgba(255,255,255,0.12)' 
-                    }}
-                    transition={{ type: 'spring', damping: 25, stiffness: 280 }}
-                    className="group flex items-center justify-between p-2 sm:p-2.5 rounded-xl bg-white/[0.04] hover:bg-white/10 active:bg-white/15 transition border border-white/5 cursor-grab active:cursor-grabbing select-none"
-                  >
-                    <button
-                      onClick={() => onSelectTrack(song, effectiveIdx)}
-                      className="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer"
-                    >
-                      <span className="text-xs font-semibold text-rose-400 w-5 text-center shrink-0">
-                        {i + 1}
-                      </span>
-                      <ArtworkImage
-                        src={song.artworkUrl}
-                        alt={song.title}
-                        size="small"
-                        className="w-11 h-11 rounded-lg shrink-0 shadow-sm border border-white/10"
-                        fallbackVideoId={song.id}
-                      />
-                      <div className="min-w-0 flex-1 pr-2">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <p className="text-sm font-medium text-white group-hover:text-rose-400 transition truncate">
-                            {song.title}
-                          </p>
-                          {i === 0 && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-[10px] text-emerald-300 font-medium shrink-0">
-                              <HardDrive className="w-2.5 h-2.5 text-emerald-400" />
-                              Next Cached
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <p className="text-xs text-neutral-400 truncate">
-                            {song.artist}
-                          </p>
-                          <span className={`text-[9px] font-semibold px-1.5 py-0.2 rounded-md border ${theme.bg} ${theme.color} ${theme.border} shrink-0`}>
-                            {theme.emoji} {genre}
-                          </span>
-                        </div>
-                      </div>
-                      <span className="text-xs text-neutral-500 shrink-0 mr-2 hidden sm:inline font-mono">
-                        {formatDuration(song.duration)}
-                      </span>
-                    </button>
-
-                    <div className="flex items-center gap-0.5 shrink-0 ml-1">
-                      {i > 0 && (
-                        <motion.button
-                          whileTap={{ scale: 0.82 }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onReorder(effectiveIdx, effectiveIdx - 1);
-                          }}
-                          className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
-                          title="Move up"
-                        >
-                          <ArrowUp className="w-3.5 h-3.5" />
-                        </motion.button>
-                      )}
-                      {i < upcomingTracks.length - 1 && (
-                        <motion.button
-                          whileTap={{ scale: 0.82 }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onReorder(effectiveIdx, effectiveIdx + 1);
-                          }}
-                          className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
-                          title="Move down"
-                        >
-                          <ArrowDown className="w-3.5 h-3.5" />
-                        </motion.button>
-                      )}
-                      <motion.button
-                        whileTap={{ scale: 0.82 }}
+                  {/* Right side: Reorder 3-bar icon or Delete button in edit mode */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    {isEditMode ? (
+                      <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          triggerHaptic();
                           onRemoveTrack(effectiveIdx);
                         }}
-                        className="p-1.5 rounded-lg text-neutral-500 hover:text-rose-400 hover:bg-rose-500/10 transition cursor-pointer"
-                        title="Remove from queue"
+                        className="p-2 text-neutral-400 hover:text-rose-400 transition cursor-pointer"
+                        title="Remove track"
                       >
-                        <X className="w-4 h-4" />
-                      </motion.button>
-
-                      {/* Touch & mouse Drag Reorder Handle */}
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    ) : (
                       <div 
-                        className="p-1.5 text-neutral-500 group-hover:text-neutral-300 hover:text-white transition cursor-grab active:cursor-grabbing touch-none"
-                        title="Drag to reorder track position"
+                        className="p-2 text-neutral-400 hover:text-white transition cursor-grab active:cursor-grabbing touch-none"
+                        title="Drag to reorder"
                       >
-                        <GripVertical className="w-4 h-4" />
+                        <Menu className="w-5 h-5 stroke-[2.2]" />
                       </div>
-                    </div>
-                  </Reorder.Item>
-                );
-              })}
-            </Reorder.Group>
-          )}
-        </div>
+                    )}
+                  </div>
+                </Reorder.Item>
+              );
+            })}
+          </Reorder.Group>
+        )}
 
-        {/* 4. SPOTIFY CONTINUOUS SONG RADIO FOOTER */}
-        <div className="p-3.5 rounded-2xl bg-neutral-900/60 border border-white/5 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
-              <Radio className="w-4 h-4 animate-pulse" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-white">Continuous Song Radio Active</p>
-              <p className="text-[11px] text-neutral-400">
-                Automatically queueing songs matching {nowPlayingGenre}
-              </p>
-            </div>
-          </div>
-
-          {onLoadMoreSuggestions && (
-            <button
-              onClick={onLoadMoreSuggestions}
-              disabled={isLoadingSuggestions}
-              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-white font-medium transition cursor-pointer shrink-0"
-            >
-              Load More
-            </button>
-          )}
-        </div>
-
-        {/* 5. PREVIOUSLY PLAYED (Collapsible) */}
+        {/* Previously Played History (Collapsible) */}
         {historyTracks.length > 0 && (
-          <div className="pt-3 border-t border-white/5">
-            <motion.button
-              whileTap={{ scale: 0.98 }}
+          <div className="pt-3 pb-1 border-t border-white/5 mt-3">
+            <button
               onClick={() => setShowHistory(!showHistory)}
-              className="w-full flex items-center justify-between py-2 text-xs font-semibold text-neutral-400 hover:text-neutral-200 transition"
+              className="w-full flex items-center justify-between py-1 text-xs font-semibold text-neutral-400 hover:text-neutral-200 transition cursor-pointer"
             >
               <div className="flex items-center gap-1.5">
                 <History className="w-3.5 h-3.5 text-neutral-500" />
@@ -574,51 +397,124 @@ export const QueueView: React.FC<QueueViewProps> = ({
               ) : (
                 <ChevronDown className="w-4 h-4 text-neutral-500" />
               )}
-            </motion.button>
+            </button>
 
             <AnimatePresence>
               {showHistory && (
                 <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="space-y-1.5 mt-2 opacity-80 overflow-hidden"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="space-y-1 pt-2 overflow-hidden"
                 >
-                  {historyTracks.map((song, histIdx) => (
-                    <motion.div
-                      key={`hist-${song.id}-${histIdx}`}
-                      whileTap={{ scale: 0.98 }}
-                      className="flex items-center justify-between p-2 rounded-xl hover:bg-white/5 transition cursor-pointer"
-                      onClick={() => onSelectTrack(song, histIdx)}
+                  {historyTracks.map((song, i) => (
+                    <div
+                      key={`hist-${song.id}-${i}`}
+                      onClick={() => onSelectTrack(song, i)}
+                      className="flex items-center justify-between p-2 rounded-xl hover:bg-white/[0.04] transition cursor-pointer opacity-70 hover:opacity-100"
                     >
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
                         <ArtworkImage
                           src={song.artworkUrl}
                           alt={song.title}
                           size="small"
-                          className="w-9 h-9 rounded-md shrink-0 opacity-80"
+                          className="w-10 h-10 rounded-lg shrink-0 object-cover opacity-80"
                           fallbackVideoId={song.id}
                         />
                         <div className="min-w-0 flex-1">
-                          <p className="text-xs font-medium text-neutral-300 truncate">
-                            {song.title}
-                          </p>
-                          <p className="text-[10px] text-neutral-500 truncate">
-                            {song.artist}
-                          </p>
+                          <p className="text-xs font-medium text-white truncate">{song.title}</p>
+                          <p className="text-[11px] text-neutral-400 truncate">{song.artist}</p>
                         </div>
                       </div>
-                      <span className="text-[11px] text-rose-400 hover:underline flex items-center gap-1">
-                        <Play className="w-3 h-3 fill-current" />
-                        Replay
+                      <span className="text-[11px] text-neutral-500 font-mono">
+                        {formatDuration(song.duration)}
                       </span>
-                    </motion.div>
+                    </div>
                   ))}
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
         )}
+
+        {/* Bottom padding to scroll clear of floating reshuffle & dock */}
+        <div className="h-28 shrink-0" />
+      </div>
+
+      {/* Floating Centered Reshuffle Button Pill */}
+      {upcomingTracks.length > 1 && (
+        <div className="absolute bottom-[86px] inset-x-0 flex justify-center pointer-events-none z-30">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.94 }}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic();
+              onReshuffle?.();
+            }}
+            className="pointer-events-auto px-5 py-2 rounded-full bg-[#2a2a2a]/95 hover:bg-[#383838] active:scale-95 text-white text-xs font-semibold border border-white/15 shadow-2xl transition-all flex items-center gap-1.5 cursor-pointer backdrop-blur-md"
+          >
+            <span>Reshuffle</span>
+          </motion.button>
+        </div>
+      )}
+
+      {/* Segmented Bottom Dock Toolbar: Shuffle | Repeat | Timer */}
+      <div className="px-4 pb-4 pt-1 shrink-0 z-20">
+        <div className="bg-[#222222]/90 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5 grid grid-cols-3 gap-1 shadow-2xl">
+          {/* Shuffle */}
+          <button
+            onClick={() => {
+              triggerHaptic();
+              onToggleShuffle?.();
+            }}
+            className={`flex flex-col items-center justify-center py-1.5 rounded-xl transition cursor-pointer ${
+              shuffle ? 'text-[#1ed760]' : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <Shuffle className="w-5 h-5 stroke-[2.2]" />
+            <span className={`text-[11px] font-medium mt-1 ${shuffle ? 'text-[#1ed760] font-semibold' : 'text-neutral-400'}`}>
+              Shuffle
+            </span>
+          </button>
+
+          {/* Repeat */}
+          <button
+            onClick={() => {
+              triggerHaptic();
+              onCycleRepeat?.();
+            }}
+            className={`flex flex-col items-center justify-center py-1.5 rounded-xl transition cursor-pointer ${
+              repeat && repeat !== 'off' ? 'text-[#1ed760]' : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            {repeat === 'one' ? (
+              <Repeat1 className="w-5 h-5 stroke-[2.4]" />
+            ) : (
+              <Repeat className="w-5 h-5 stroke-[2.2]" />
+            )}
+            <span className={`text-[11px] font-medium mt-1 ${repeat && repeat !== 'off' ? 'text-[#1ed760] font-semibold' : 'text-neutral-400'}`}>
+              Repeat
+            </span>
+          </button>
+
+          {/* Timer */}
+          <button
+            onClick={() => {
+              triggerHaptic();
+              onOpenSleepTimer?.();
+            }}
+            className={`flex flex-col items-center justify-center py-1.5 rounded-xl transition cursor-pointer ${
+              sleepTimerMinutes !== null ? 'text-[#1ed760]' : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <Timer className="w-5 h-5 stroke-[2.2]" />
+            <span className={`text-[11px] font-medium mt-1 ${sleepTimerMinutes !== null ? 'text-[#1ed760] font-semibold' : 'text-neutral-400'}`}>
+              {sleepTimerMinutes !== null ? `${sleepTimerMinutes}m` : 'Timer'}
+            </span>
+          </button>
+        </div>
       </div>
     </div>
   );

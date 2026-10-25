@@ -53,6 +53,7 @@ export function usePlayer() {
   const setVolume = useCallback((vol: number) => audioEngine.setVolume(vol), []);
   const toggleMute = useCallback(() => audioEngine.toggleMute(), []);
   const toggleShuffle = useCallback(() => audioEngine.toggleShuffle(), []);
+  const reshuffle = useCallback(() => audioEngine.reshuffle(), []);
   const cycleRepeatMode = useCallback(() => audioEngine.cycleRepeatMode(), []);
   const addToQueue = useCallback((song: Song) => audioEngine.addToQueue(song), []);
   const playNext = useCallback((song: Song) => audioEngine.playNext(song), []);
@@ -83,6 +84,7 @@ export function usePlayer() {
     setVolume,
     toggleMute,
     toggleShuffle,
+    reshuffle,
     cycleRepeatMode,
     addToQueue,
     playNext,

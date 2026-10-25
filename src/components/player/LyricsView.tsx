@@ -15,6 +15,7 @@ interface LyricsViewProps {
   syncedLyrics?: boolean;
   blurUnfocusedLyrics?: boolean;
   lowPowerMode?: boolean;
+  onClose?: () => void;
 }
 
 export const LyricsView: React.FC<LyricsViewProps> = ({
@@ -30,6 +31,7 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
   syncedLyrics = true,
   blurUnfocusedLyrics = false,
   lowPowerMode = false,
+  onClose,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const activeLineRef = useRef<HTMLDivElement | null>(null);
@@ -160,16 +162,25 @@ export const LyricsView: React.FC<LyricsViewProps> = ({
   };
 
   return (
-    <div className="h-full flex flex-col relative select-none">
+    <div className="h-full flex flex-col relative select-none bg-[#181818]/94 backdrop-blur-2xl text-white">
+      {/* Top Drag Handle Bar */}
+      <div 
+        className="w-full flex items-center justify-center pt-2.5 pb-2 cursor-pointer shrink-0 touch-none group"
+        onClick={onClose}
+        title="Swipe down to dismiss"
+      >
+        <div className="w-10 h-1 rounded-full bg-white/20 group-hover:bg-white/40 transition-colors" />
+      </div>
+
       {/* Top Sync & Provider Control Bar */}
-      <div className="px-4 py-2.5 flex items-center justify-between border-b border-white/10 bg-[#16161a] shrink-0 z-20">
+      <div className="px-5 py-2 flex items-center justify-between border-b border-white/10 shrink-0 z-20">
         {/* Provider Selector Button */}
         <button
           onClick={onOpenProviderModal}
           className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-semibold text-white transition cursor-pointer max-w-[210px] truncate"
           title="Change Lyrics Provider"
         >
-          <Sparkles className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+          <Sparkles className="w-3.5 h-3.5 text-[#1ed760] shrink-0" />
           <span className="truncate">{providerName}</span>
           <ChevronDown className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
         </button>

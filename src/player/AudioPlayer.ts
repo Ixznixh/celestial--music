@@ -1815,6 +1815,12 @@ export class AudioPlayer {
     this.notify();
   }
 
+  public reshuffle(): void {
+    this.queueManager.reshuffle();
+    this.preloadNextTrack();
+    this.notify();
+  }
+
   public cycleRepeatMode(): void {
     this.queueManager.cycleRepeat();
     this.notify();
