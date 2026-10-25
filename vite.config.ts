@@ -69,8 +69,6 @@ export default defineConfig(() => {
                   'googleusercontent.com',
                   'images.unsplash.com',
                   'cdn.jiosaavn.com',
-                  'saavncdn.com',
-                  'c.saavncdn.com',
                 ].some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`)),
               handler: 'CacheFirst',
               options: {

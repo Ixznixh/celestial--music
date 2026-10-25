@@ -144,7 +144,6 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
                       src={currentSong.artworkUrl}
                       fallbackVideoId={currentSong.id}
                       alt={currentSong.title}
-                      artist={currentSong.artist}
                       rounded="rounded-xl"
                       size="small"
                       className="w-11 h-11 md:w-12 md:h-12 rounded-xl shadow-md border border-white/10 object-cover"

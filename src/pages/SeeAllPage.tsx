@@ -167,7 +167,7 @@ export const SeeAllPage: React.FC<SeeAllPageProps> = ({
                 className="p-2.5 rounded-2xl bg-neutral-900/60 hover:bg-neutral-850/80 border border-neutral-800/80 cursor-pointer active:scale-95 transition"
               >
                 <div className="relative mb-2">
-                  <ArtworkImage src={song.artworkUrl} alt={song.title} artist={song.artist} className="w-full aspect-square rounded-xl shadow-md" />
+                  <ArtworkImage src={song.artworkUrl} alt={song.title} className="w-full aspect-square rounded-xl shadow-md" />
                   <div className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-rose-600 text-white flex items-center justify-center shadow">
                     <Play className="w-4 h-4 fill-current ml-0.5" />
                   </div>

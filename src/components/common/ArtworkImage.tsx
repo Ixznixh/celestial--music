@@ -5,7 +5,6 @@ import { fetchSongArtwork } from '../../services/thumbnailEnricher';
 interface ArtworkImageProps {
   src?: string;
   alt: string;
-  artist?: string;
   className?: string;
   aspectRatio?: 'square' | 'wide' | 'avatar';
   rounded?: string;
@@ -24,13 +23,6 @@ interface ArtworkImageProps {
 export function upgradeArtworkUrl(url?: string, size: 'small' | 'medium' | 'large' | 'full' = 'medium'): string | undefined {
   if (!url) return url;
   let clean = url.startsWith('//') ? `https:${url}` : url;
-
-  // Always upgrade JioSaavn artwork to full 500x500 CDN resolution
-  if (clean.includes('saavncdn.com')) {
-    clean = clean.replace(/-(?:50x50|150x150|250x250)\.jpg/i, '-500x500.jpg');
-    clean = clean.replace('50x50', '500x500').replace('150x150', '500x500');
-    return clean;
-  }
 
   const dim = size === 'small' ? 240 : size === 'medium' ? 400 : 544;
 
@@ -65,7 +57,6 @@ export function upgradeArtworkUrl(url?: string, size: 'small' | 'medium' | 'larg
 export const ArtworkImage: React.FC<ArtworkImageProps> = ({
   src,
   alt,
-  artist,
   className = '',
   aspectRatio = 'square',
   rounded = 'rounded-xl',
@@ -91,18 +82,18 @@ export const ArtworkImage: React.FC<ArtworkImageProps> = ({
     setIsLoaded(false);
   }, [optimizedSrc]);
 
-  // If initial src is missing or an unsplash placeholder, resolve real JioSaavn artwork dynamically
+  // If initial src is missing or an unsplash placeholder, resolve real album art dynamically
   useEffect(() => {
     if (!isValidInitialSrc && alt && alt.length > 2 && alt !== 'Celestial Music' && alt !== 'Playlist') {
       let active = true;
-      fetchSongArtwork(alt, artist).then((res) => {
+      fetchSongArtwork(alt).then((res) => {
         if (active && res) {
           setDynamicSrc(res);
         }
       });
       return () => { active = false; };
     }
-  }, [isValidInitialSrc, alt, artist]);
+  }, [isValidInitialSrc, alt]);
 
   // Extract video ID from URL or fallback prop
   const videoId = useMemo(() => {
@@ -136,8 +127,8 @@ export const ArtworkImage: React.FC<ArtworkImageProps> = ({
     } else if (stage < 2 && (optimizedSrc || videoId)) {
       setStage(2);
     } else if (!dynamicSrc && alt && alt.length > 2 && alt !== 'Celestial Music' && alt !== 'Playlist') {
-      // Last-mile recovery: fetch song artwork from JioSaavn by title/artist
-      fetchSongArtwork(alt, artist).then((res) => {
+      // Last-mile recovery: fetch song artwork by title/artist
+      fetchSongArtwork(alt).then((res) => {
         if (res) {
           setDynamicSrc(res);
           setStage(0);

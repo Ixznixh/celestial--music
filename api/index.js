@@ -2910,76 +2910,58 @@ var init_audioFallback = __esm({
 });
 
 // server/services/thumbnailResolver.ts
-function cleanString(str) {
-  return str.replace(/\[[^\]]*\]/g, " ").replace(/\([^)]*\)/g, " ").replace(/ft\..*$/i, "").replace(/feat\..*$/i, "").replace(/[\(\)\[\]"']/g, " ").replace(/\s+/g, " ").trim();
-}
 async function resolveTrackArtwork(title, artist) {
   if (!title || !title.trim()) return void 0;
-  const rawTitle = title.trim();
-  const rawArtist = (artist || "").trim();
-  const cacheKey = `${rawTitle.toLowerCase()}__${rawArtist.toLowerCase()}`;
+  const cacheKey = `${title.trim().toLowerCase()}__${(artist || "").trim().toLowerCase()}`;
   if (thumbnailCache.has(cacheKey)) {
     return thumbnailCache.get(cacheKey);
   }
-  const cleanTitle = cleanString(rawTitle);
-  const cleanArtist = rawArtist.split(/[,/&|;]/)[0].replace(/\s*-\s*Topic$/i, "").replace(/\s*VEVO$/i, "").trim();
-  const queries = [
-    `${cleanTitle} ${cleanArtist}`.trim(),
-    cleanTitle
-  ].filter(Boolean);
-  for (const q of queries) {
-    try {
-      const url = `https://www.jiosaavn.com/api.php?__call=autocomplete.get&_format=json&_marker=0&cc=in&includeMetaTags=1&query=${encodeURIComponent(q)}`;
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        },
-        signal: AbortSignal.timeout(2e3)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const img = data.songs?.data?.[0]?.image;
-        if (img && typeof img === "string") {
-          const highRes = img.replace(/-(?:50x50|150x150|250x250)\.jpg/i, "-500x500.jpg").replace("50x50", "500x500").replace("150x150", "500x500");
-          if (thumbnailCache.size >= MAX_CACHE_SIZE) {
-            const firstKey = thumbnailCache.keys().next().value;
-            if (firstKey) thumbnailCache.delete(firstKey);
-          }
-          thumbnailCache.set(cacheKey, highRes);
-          return highRes;
-        }
+  const cleanTitle = title.replace(/\[[^\]]*\]/g, " ").replace(/\([^)]*\)/g, " ").replace(/ft\..*$/i, "").replace(/feat\..*$/i, "").replace(/[\(\)\[\]"']/g, " ").replace(/\s+/g, " ").trim();
+  const cleanArtist = (artist || "").split(/[,/&|;]/)[0].replace(/\s*-\s*Topic$/i, "").replace(/\s*VEVO$/i, "").trim();
+  try {
+    const query = `${cleanTitle} ${cleanArtist}`.trim();
+    const url = `https://www.jiosaavn.com/api.php?__call=autocomplete.get&_format=json&_marker=0&cc=in&includeMetaTags=1&query=${encodeURIComponent(query)}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const data = await res.json();
+      const firstSong = data.songs?.data?.[0];
+      if (firstSong?.image) {
+        const highRes = firstSong.image.replace("50x50", "500x500").replace("150x150", "500x500");
+        thumbnailCache.set(cacheKey, highRes);
+        return highRes;
       }
-    } catch {
     }
-    try {
-      const url = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&p=1&n=5&q=${encodeURIComponent(q)}`;
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        },
-        signal: AbortSignal.timeout(2e3)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const img = data.results?.[0]?.image;
-        if (img && typeof img === "string") {
-          const highRes = img.replace(/-(?:50x50|150x150|250x250)\.jpg/i, "-500x500.jpg").replace("50x50", "500x500").replace("150x150", "500x500");
-          if (thumbnailCache.size >= MAX_CACHE_SIZE) {
-            const firstKey = thumbnailCache.keys().next().value;
-            if (firstKey) thumbnailCache.delete(firstKey);
-          }
-          thumbnailCache.set(cacheKey, highRes);
-          return highRes;
-        }
+  } catch {
+  }
+  try {
+    const candidates = await youtubeMusicService.getCandidatesForTrack(
+      `art_${encodeURIComponent(cleanTitle.slice(0, 20))}`,
+      cleanTitle,
+      cleanArtist
+    );
+    if (candidates && candidates.length > 0 && candidates[0].artworkUrl) {
+      let art = candidates[0].artworkUrl;
+      if (art.includes("i.ytimg.com")) {
+        art = art.replace(/hq720\.jpg/i, "hqdefault.jpg");
       }
-    } catch {
+      thumbnailCache.set(cacheKey, art);
+      return art;
     }
+  } catch {
   }
   return void 0;
 }
 async function batchResolveArtworks(tracks) {
   const result = /* @__PURE__ */ new Map();
-  const CHUNK_SIZE = 16;
+  const CHUNK_SIZE = 8;
   for (let i = 0; i < tracks.length; i += CHUNK_SIZE) {
     const chunk = tracks.slice(i, i + CHUNK_SIZE);
     await Promise.all(
@@ -2994,11 +2976,11 @@ async function batchResolveArtworks(tracks) {
   }
   return result;
 }
-var thumbnailCache, MAX_CACHE_SIZE;
+var thumbnailCache;
 var init_thumbnailResolver = __esm({
   "server/services/thumbnailResolver.ts"() {
+    init_youtubeMusic();
     thumbnailCache = /* @__PURE__ */ new Map();
-    MAX_CACHE_SIZE = 1e3;
   }
 });
 
@@ -3522,12 +3504,12 @@ var init_queue = __esm({
 
 // server/routes/imageProxy.ts
 import { Router as Router9 } from "express";
-var imageProxyRouter, cache, MAX_CACHE_SIZE2, CACHE_TTL_MS;
+var imageProxyRouter, cache, MAX_CACHE_SIZE, CACHE_TTL_MS;
 var init_imageProxy = __esm({
   "server/routes/imageProxy.ts"() {
     imageProxyRouter = Router9();
     cache = /* @__PURE__ */ new Map();
-    MAX_CACHE_SIZE2 = 300;
+    MAX_CACHE_SIZE = 300;
     CACHE_TTL_MS = 24 * 60 * 60 * 1e3;
     imageProxyRouter.get("/", async (req, res) => {
       const imageUrl = req.query.url;
@@ -3595,7 +3577,7 @@ var init_imageProxy = __esm({
         const contentType = upstreamRes.headers.get("content-type") || "image/jpeg";
         const arrayBuffer = await upstreamRes.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
-        if (cache.size >= MAX_CACHE_SIZE2) {
+        if (cache.size >= MAX_CACHE_SIZE) {
           const firstKey = cache.keys().next().value;
           if (firstKey) cache.delete(firstKey);
         }

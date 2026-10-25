@@ -94,7 +94,6 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
               src={song.artworkUrl} 
               fallbackVideoId={song.id}
               alt={song.title} 
-              artist={song.artist}
               rounded="rounded-xl"
               className="w-13 h-13 rounded-xl shadow-md shrink-0 object-cover border border-white/10" 
               size="small"

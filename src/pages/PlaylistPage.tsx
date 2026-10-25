@@ -216,12 +216,8 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({
       <div className="flex flex-col sm:flex-row items-center sm:items-end text-center sm:text-left gap-5 sm:gap-8">
         <div className="w-48 h-48 sm:w-56 sm:h-56 md:w-60 md:h-60 rounded-3xl overflow-hidden shadow-2xl shrink-0 border border-white/10 relative">
           <PlaylistThumbnail
-            artworkUrl={playlist.artworkUrl || playlist.tracks.find((t) => t.artworkUrl)?.artworkUrl}
-            collageArtworks={
-              playlist.collageArtworks && playlist.collageArtworks.length >= 4
-                ? playlist.collageArtworks
-                : Array.from(new Set(playlist.tracks.map((t) => t.artworkUrl).filter(Boolean)))
-            }
+            artworkUrl={playlist.artworkUrl}
+            collageArtworks={playlist.collageArtworks}
             trackCount={playlist.trackCount}
             title={playlist.title}
             rounded="rounded-3xl"
@@ -393,7 +389,6 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({
                   <ArtworkImage
                     src={song.artworkUrl}
                     alt={song.title}
-                    artist={song.artist}
                     size="small"
                     className="w-11 h-11 rounded-lg shrink-0 shadow-sm"
                   />

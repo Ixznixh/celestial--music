@@ -109,7 +109,6 @@ export const DesktopPlayerBar: React.FC<DesktopPlayerBarProps> = ({
               src={currentSong.artworkUrl}
               fallbackVideoId={currentSong.id}
               alt={currentSong.title}
-              artist={currentSong.artist}
               rounded="rounded-lg"
               size="small"
               className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-200"
