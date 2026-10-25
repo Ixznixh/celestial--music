@@ -14,9 +14,26 @@ import {
   getYouTubeAccessToken,
   setYouTubeAccessToken,
   clearYouTubeTokens,
+  requestGoogleDeviceCode,
+  pollGoogleDeviceCode,
+  connectWithYouTubeChannel,
+  connectWithYouTubeCookie,
+  setUserSession,
 } from '../services/youtubeAuth';
 
-export { auth, subscribeToAuth, signOutUser, getYouTubeAccessToken, setYouTubeAccessToken, clearYouTubeTokens };
+export {
+  auth,
+  subscribeToAuth,
+  signOutUser,
+  getYouTubeAccessToken,
+  setYouTubeAccessToken,
+  clearYouTubeTokens,
+  requestGoogleDeviceCode,
+  pollGoogleDeviceCode,
+  connectWithYouTubeChannel,
+  connectWithYouTubeCookie,
+  setUserSession,
+};
 export type { User };
 
 // Stand-in db export for legacy callers

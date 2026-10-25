@@ -91,6 +91,87 @@ export async function signInWithYouTubeAccount(profile?: {
   return user;
 }
 
+export function setUserSession(user: User, tokens?: { access_token?: string; refresh_token?: string }): void {
+  currentUser = user;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+  } catch (e) {
+    console.warn('Could not persist YouTube user:', e);
+  }
+  if (tokens?.access_token) {
+    setYouTubeAccessToken(tokens.access_token, tokens.refresh_token);
+  }
+  notifyListeners();
+  window.dispatchEvent(new CustomEvent('celestial-auth-change', { detail: { user } }));
+}
+
+/** Request Google Device Code for official YouTube Music sign-in */
+export async function requestGoogleDeviceCode(): Promise<{
+  user_code: string;
+  verification_url: string;
+  device_code: string;
+  expires_in: number;
+  interval: number;
+}> {
+  const res = await fetch('/api/ytmusic/auth/device-code', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to start Google sign-in');
+  }
+  return res.json();
+}
+
+/** Poll Google for user authorization */
+export async function pollGoogleDeviceCode(deviceCode: string): Promise<{
+  status: 'pending' | 'slow_down' | 'expired' | 'denied' | 'authenticated' | 'error';
+  user?: User;
+  tokens?: { access_token: string; refresh_token?: string; expires_in?: number };
+  error?: string;
+}> {
+  const res = await fetch(`/api/ytmusic/auth/device-poll?code=${encodeURIComponent(deviceCode)}`);
+  return res.json();
+}
+
+/** Connect real YouTube channel by handle (@username) or channel link */
+export async function connectWithYouTubeChannel(query: string): Promise<{
+  success: boolean;
+  user: User;
+}> {
+  const res = await fetch('/api/ytmusic/auth/connect-channel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Failed to connect YouTube channel');
+  }
+  setUserSession(data.user);
+  return data;
+}
+
+/** Connect with YouTube Music session cookie */
+export async function connectWithYouTubeCookie(cookie: string): Promise<{
+  success: boolean;
+  user: User;
+  likedSongs?: any[];
+}> {
+  const res = await fetch('/api/ytmusic/auth/connect-cookie', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cookie }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Failed to connect with YouTube Music cookie');
+  }
+  setUserSession(data.user);
+  return data;
+}
+
 export async function signOutUser(): Promise<void> {
   currentUser = null;
   try {
