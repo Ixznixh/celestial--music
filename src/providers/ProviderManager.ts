@@ -279,15 +279,17 @@ export class ProviderManager implements MusicProvider {
     );
   }
 
-  async getHomeSections(forceRefresh: boolean = false, mood?: string): Promise<HomeSection[]> {
+  async getHomeSections(forceRefresh: boolean = false, mood?: string, seeds: string[] = []): Promise<HomeSection[]> {
     const res = await this.executeWithFallback(
       async (p) => {
         if (p.getHomeSections) {
-          return p.getHomeSections(forceRefresh, mood);
+          return p.getHomeSections(forceRefresh, mood, seeds);
         }
         throw new Error('Provider does not support getHomeSections');
       },
-      `getHomeSections(${forceRefresh ? 'refresh=true' : ''}${mood ? ` mood=${mood}` : ''})`
+      `getHomeSections(${forceRefresh ? 'refresh=true' : ''}${mood ? ` mood=${mood}` : ''}${
+        seeds.length ? ` seeds=${seeds.length}` : ''
+      })`
     );
 
     if (Array.isArray(res)) {

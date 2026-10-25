@@ -11,7 +11,7 @@ export interface MusicProvider {
   getStream(id: string): Promise<StreamInfo>;
   getArtwork?(item: Song | Album | Artist | Playlist, size?: 'small' | 'medium' | 'large'): string;
   getLyrics?(songId: string, meta?: { title?: string; artist?: string; duration?: number; album?: string }): Promise<Lyrics | null>;
-  getHomeSections?(forceRefresh?: boolean, mood?: string): Promise<HomeSection[]>;
+  getHomeSections?(forceRefresh?: boolean, mood?: string, seeds?: string[]): Promise<HomeSection[]>;
 }
 
 export type { Song, Album, Artist, Playlist, SearchResults, StreamInfo, HomeSection, Lyrics };

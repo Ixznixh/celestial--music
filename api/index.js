@@ -964,7 +964,60 @@ function isTitleTooSimilar(titleA, titleB) {
   const simB = overlap / tokensB.length;
   return simA >= 0.5 || simB >= 0.5;
 }
-var MAX_SONG_DURATION_SECONDS, LYRICS_MATCH_THRESHOLD, PlayerInterstitialNode, InterstitialViewNode, QUICK_PICKS_QUERY_POOL, YouTubeMusicService, youtubeMusicService;
+function sanitizeSeeds(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const value of raw) {
+    if (typeof value !== "string") continue;
+    const clean = value.replace(/\s+/g, " ").trim().slice(0, 60);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+    if (out.length >= MAX_HOME_SEEDS) break;
+  }
+  return out;
+}
+function pickRotatingShelves(pool, count, random = Math.random) {
+  if (pool.length <= count) return [...pool];
+  const indexes = pool.map((_, i) => i);
+  for (let i = indexes.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [indexes[i], indexes[j]] = [indexes[j], indexes[i]];
+  }
+  return indexes.slice(0, count).map((i) => pool[i]);
+}
+function buildPersonalizedShelves(seeds) {
+  const clean = sanitizeSeeds(seeds);
+  if (clean.length === 0) return [];
+  const shelves = [
+    {
+      id: "made-for-you",
+      title: "Made For You",
+      subtitle: `Built from ${clean.slice(0, 3).join(", ")}`,
+      query: `${clean[0]} top songs`
+    }
+  ];
+  if (clean.length > 1) {
+    shelves.push({
+      id: "because-you-listened",
+      title: `Because you listened to ${clean[1]}`,
+      subtitle: "More in the same direction",
+      query: `${clean[1]} hit songs`
+    });
+  }
+  return shelves.slice(0, MAX_PERSONALIZED_SHELVES);
+}
+function selectShelvesForFeed(seeds = [], random = Math.random) {
+  return [
+    ...buildPersonalizedShelves(seeds),
+    ...ANCHOR_SHELVES,
+    ...pickRotatingShelves(ROTATING_SHELVES, ROTATING_SHELVES_PER_BUILD, random)
+  ];
+}
+var MAX_SONG_DURATION_SECONDS, LYRICS_MATCH_THRESHOLD, PlayerInterstitialNode, InterstitialViewNode, QUICK_PICKS_QUERY_POOL, ANCHOR_SHELVES, ROTATING_SHELVES, ROTATING_SHELVES_PER_BUILD, MAX_PERSONALIZED_SHELVES, MAX_HOME_SEEDS, YouTubeMusicService, youtubeMusicService;
 var init_youtubeMusic = __esm({
   "server/services/youtubeMusic.ts"() {
     init_formatters();
@@ -1013,6 +1066,97 @@ var init_youtubeMusic = __esm({
       "Sean Roldan Tamil songs",
       "Vidya Sagar Tamil hit songs"
     ];
+    ANCHOR_SHELVES = [
+      {
+        id: "trending-tamil",
+        title: "Trending in Tamil Nadu",
+        subtitle: "Latest Kollywood chartbusters & viral tracks",
+        query: "Latest Tamil hit songs"
+      },
+      {
+        id: "new-releases",
+        title: "New Releases",
+        subtitle: "Fresh out of the studio this week",
+        query: "New Tamil songs 2025 2026"
+      }
+    ];
+    ROTATING_SHELVES = [
+      {
+        id: "anirudh-essentials",
+        title: "Anirudh Ravichander Essentials",
+        subtitle: "Mass beats and viral anthems",
+        query: "Anirudh Ravichander Tamil hit songs"
+      },
+      {
+        id: "ar-rahman-masterpieces",
+        title: "A.R. Rahman Masterpieces",
+        subtitle: "Evergreen Kollywood magic & classic hits",
+        query: "AR Rahman Tamil evergreen hit songs"
+      },
+      {
+        id: "tamil-melodies",
+        title: "Tamil Melody & Romance",
+        subtitle: "Heart-touching acoustic & love songs",
+        query: "Tamil melody love romantic songs"
+      },
+      {
+        id: "yuvan-vibes",
+        title: "Yuvan Shankar Raja Vibes",
+        subtitle: "U1 youth anthems & soul melodies",
+        query: "Yuvan Shankar Raja Tamil songs"
+      },
+      {
+        id: "kuthu-party",
+        title: "Mass & Kuthu Beats",
+        subtitle: "High energy dance & celebration songs",
+        query: "Tamil mass kuthu party dance songs"
+      },
+      {
+        id: "kollywood-classics",
+        title: "90s & 2000s Kollywood Golden Era",
+        subtitle: "Harris Jayaraj, Vidyasagar & Ilaiyaraaja",
+        query: "Harris Jayaraj Vidyasagar 90s 2000s Tamil hit songs"
+      },
+      {
+        id: "sid-sriram-soul",
+        title: "Sid Sriram & Pradeep Kumar",
+        subtitle: "Carnatic-tinted voices & soul fills",
+        query: "Sid Sriram Pradeep Kumar Tamil melody songs"
+      },
+      {
+        id: "maestro-classics",
+        title: "Ilaiyaraaja & SPB Classics",
+        subtitle: "The golden era of Tamil film music",
+        query: "Ilaiyaraaja SPB Tamil hit songs"
+      },
+      {
+        id: "modern-kollywood",
+        title: "Modern Kollywood Rotation",
+        subtitle: "Santhosh Narayanan, GV Prakash, Sam CS",
+        query: "Santhosh Narayanan GV Prakash Tamil hit songs"
+      },
+      {
+        id: "hiphop-tamil",
+        title: "Tamil Hip Hop & Rap",
+        subtitle: "Hip Hop Tamizha, Hiphop Tamizha Adjacent & more",
+        query: "Tamil hip hop songs Hip Hop Tamizha"
+      },
+      {
+        id: "late-night-lofi",
+        title: "Late Night Tamil Lofi",
+        subtitle: "Slow reverb & wind-down melodies",
+        query: "Tamil lofi slow reverb melody songs"
+      },
+      {
+        id: "romantic-duets",
+        title: "Evergreen Tamil Duets",
+        subtitle: "Playlists of two-voice classics",
+        query: "Tamil romantic duet hit songs"
+      }
+    ];
+    ROTATING_SHELVES_PER_BUILD = 4;
+    MAX_PERSONALIZED_SHELVES = 2;
+    MAX_HOME_SEEDS = 6;
     YouTubeMusicService = class {
       constructor() {
         this.yt = null;
@@ -1353,8 +1497,9 @@ var init_youtubeMusic = __esm({
       /**
        * Real Home Feed with automated YouTube Music style recommendations tailored for Tamil music
        */
-      async getHome(forceRefresh = false, mood) {
-        const cacheKey = `home_${mood || "all"}`;
+      async getHome(forceRefresh = false, mood, rawSeeds = []) {
+        const seeds = sanitizeSeeds(rawSeeds);
+        const cacheKey = `home_${mood || "all"}_${seeds.join("|")}`;
         const cached = this.homeCache.get(cacheKey);
         if (!forceRefresh && cached && cached.expires > Date.now()) {
           return cached.data;
@@ -1374,58 +1519,10 @@ var init_youtubeMusic = __esm({
           type: "song"
         };
         if (!mood || mood === "all") {
-          queries = [
-            quickPicksQueryDef,
-            {
-              id: "trending-tamil",
-              title: "Trending in Tamil Nadu",
-              subtitle: "Latest Kollywood chartbusters & viral tracks",
-              query: "Latest Tamil hit songs",
-              type: "song"
-            },
-            {
-              id: "anirudh-essentials",
-              title: "Anirudh Ravichander Essentials",
-              subtitle: "Mass beats and viral anthems",
-              query: "Anirudh Ravichander Tamil hit songs",
-              type: "song"
-            },
-            {
-              id: "ar-rahman-masterpieces",
-              title: "A.R. Rahman Masterpieces",
-              subtitle: "Evergreen Kollywood magic & classic hits",
-              query: "A.R. Rahman Tamil evergreen hit songs",
-              type: "song"
-            },
-            {
-              id: "tamil-melodies",
-              title: "Tamil Melody & Romance",
-              subtitle: "Heart-touching acoustic & love songs",
-              query: "Tamil melody love romantic songs",
-              type: "song"
-            },
-            {
-              id: "yuvan-vibes",
-              title: "Yuvan Shankar Raja Vibes",
-              subtitle: "U1 youth anthems & soul melodies",
-              query: "Yuvan Shankar Raja Tamil songs",
-              type: "song"
-            },
-            {
-              id: "kuthu-party",
-              title: "Mass & Kuthu Beats",
-              subtitle: "High energy dance & celebration songs",
-              query: "Tamil mass kuthu party dance songs",
-              type: "song"
-            },
-            {
-              id: "kollywood-classics",
-              title: "90s & 2000s Kollywood Golden Era",
-              subtitle: "Harris Jayaraj, Vidyasagar & Ilaiyaraaja",
-              query: "Harris Jayaraj Vidyasagar 90s 2000s Tamil hit songs",
-              type: "song"
-            }
-          ];
+          queries = [quickPicksQueryDef, ...selectShelvesForFeed(seeds)].map((shelf) => ({
+            ...shelf,
+            type: "song"
+          }));
         } else if (mood === "trending" || mood === "music") {
           queries = [
             quickPicksQueryDef,
@@ -1537,7 +1634,34 @@ var init_youtubeMusic = __esm({
                 }
                 return;
               }
-              const results = await this.search(cat.query, "song", forceRefresh);
+              if (cat.id === "made-for-you") {
+                const seedQueries = seeds.slice(0, 3).map((seed) => `${seed} top songs`);
+                const results2 = await Promise.all(
+                  seedQueries.map((q) => this.search(q, "song", false).catch(() => ({ songs: [] })))
+                );
+                const combined = results2.flatMap((res) => res.songs || []).filter((song) => isPlayableSongEntry(song));
+                const seen = /* @__PURE__ */ new Set();
+                const uniqueSongs = [];
+                for (const song of combined) {
+                  const key = (song.id || song.title).toLowerCase();
+                  if (!seen.has(key)) {
+                    seen.add(key);
+                    uniqueSongs.push(song);
+                  }
+                }
+                const freshItems = uniqueSongs.sort(() => Math.random() - 0.5);
+                if (freshItems.length > 0) {
+                  sections.push({
+                    id: cat.id,
+                    title: cat.title,
+                    subtitle: cat.subtitle,
+                    type: "song",
+                    items: freshItems.slice(0, 16)
+                  });
+                }
+                return;
+              }
+              const results = await this.search(cat.query, "song", false);
               let items = (results.songs || []).filter((song) => isPlayableSongEntry(song));
               if (items.length > 0) {
                 if (forceRefresh && items.length > 4) {
@@ -1560,7 +1684,9 @@ var init_youtubeMusic = __esm({
         );
         const orderedSections = queries.map((q) => sections.find((s) => s.id === q.id)).filter((s) => Boolean(s));
         if (orderedSections.length > 0) {
-          this.homeCache.set(cacheKey, { data: orderedSections, expires: Date.now() + 9e5 });
+          if (!forceRefresh) {
+            this.homeCache.set(cacheKey, { data: orderedSections, expires: Date.now() + 9e5 });
+          }
           return orderedSections;
         }
         throw new Error("Tamil music recommendations are temporarily unavailable from the provider.");
@@ -2521,7 +2647,8 @@ var init_home = __esm({
       try {
         const forceRefresh = req.query.refresh === "true";
         const mood = typeof req.query.mood === "string" ? req.query.mood : void 0;
-        const sections = await youtubeMusicService.getHome(forceRefresh, mood);
+        const seeds = typeof req.query.seeds === "string" ? req.query.seeds.split(",").map((s) => s.trim()).filter(Boolean) : [];
+        const sections = await youtubeMusicService.getHome(forceRefresh, mood, seeds);
         res.json({ sections });
       } catch (err) {
         console.warn("Home route notice, returning empty feed:", err?.message || err);

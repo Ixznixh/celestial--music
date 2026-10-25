@@ -38,16 +38,18 @@ export class YouTubeMusicProvider implements MusicProvider {
   /**
    * Home Sections
    */
-  public async getHome(): Promise<HomeData> {
-    const res = await musicApi.get<{ sections: HomeSection[] } | HomeSection[]>('/home');
+  public async getHome(seeds: string[] = []): Promise<HomeData> {
+    const params: Record<string, string | undefined> = { _t: Date.now().toString() };
+    if (seeds.length > 0) params.seeds = seeds.join(',');
+    const res = await musicApi.get<{ sections: HomeSection[] } | HomeSection[]>('/home', params);
     if (Array.isArray(res)) {
       return { sections: res };
     }
     return res && res.sections ? res : { sections: [] };
   }
 
-  public async getHomeSections(): Promise<HomeSection[]> {
-    const data = await this.getHome();
+  public async getHomeSections(_forceRefresh?: boolean, _mood?: string, seeds: string[] = []): Promise<HomeSection[]> {
+    const data = await this.getHome(seeds);
     return data.sections || [];
   }
 

@@ -1,10 +1,12 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Song, Album, Artist, Playlist, HomeSection, AppView } from '../types';
 import { providerManager } from '../services/providerManager';
 import { usePlayer } from '../hooks/usePlayer';
 import { useLongPress } from '../hooks/useLongPress';
 import { ArtworkImage } from '../components/common/ArtworkImage';
 import { isDemoItem } from '../services/indexedDB';
+import { emptyTasteProfile, loadTasteProfile, TasteProfile } from '../services/tasteProfile';
+import { composeHomeFeed } from '../services/homeFeed';
 import { User } from 'firebase/auth';
 import {
   Play,
@@ -100,8 +102,10 @@ export const HomePage: React.FC<HomePageProps> = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>('Just now');
   const [error, setError] = useState<string | null>(null);
+  const [profile, setProfile] = useState<TasteProfile>(emptyTasteProfile);
 
   const lastFetchRef = useRef<number>(0);
+  const sectionsCountRef = useRef<number>(sections.length);
 
   const updateSyncLabel = () => {
     const last = parseInt(sessionStorage.getItem(LAST_SYNC_KEY) || '0', 10);
@@ -124,7 +128,7 @@ export const HomePage: React.FC<HomePageProps> = ({
     if (now - lastFetchRef.current < 400) return;
     lastFetchRef.current = now;
 
-    if (sections.length === 0) {
+    if (sectionsCountRef.current === 0) {
       setIsLoading(true);
     } else {
       setIsRefreshing(true);
@@ -133,8 +137,13 @@ export const HomePage: React.FC<HomePageProps> = ({
 
     try {
       const provider = providerManager.getActiveProvider();
+      // Taste is read from this device only: the server receives a few artist names as
+      // search seeds and never any history, favourites or identifiers.
+      const taste = await loadTasteProfile();
+      setProfile(taste);
+
       const moodParam = mood !== 'all' ? mood : undefined;
-      const loadedSections = await provider.getHomeSections(forceRefresh, moodParam);
+      const loadedSections = await provider.getHomeSections(forceRefresh, moodParam, taste.seedArtists);
 
       let rawSections: HomeSection[] = [];
       if (Array.isArray(loadedSections)) {
@@ -163,6 +172,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         })
         .filter((sec) => sec.items.length > 0);
 
+      sectionsCountRef.current = sanitizedSections.length;
       setSections(sanitizedSections);
       sessionStorage.setItem(CACHE_KEY, JSON.stringify(sanitizedSections));
       sessionStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
@@ -176,14 +186,17 @@ export const HomePage: React.FC<HomePageProps> = ({
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [sections.length]);
+    // Stable identity: re-running this whenever sections change would refetch the whole
+    // feed right after every successful load.
+  }, []);
 
   /**
    * Auto-Refresh on mount and mood changes
    */
   useEffect(() => {
-    // Initial load on mount or mood change
-    loadHomeData(false, activeMood);
+    // Every mount is a fresh build: the server rotates shelves, so a reload or a
+    // close-and-reopen always hands back a different feed.
+    loadHomeData(true, activeMood);
 
     // Update clock label periodically (throttled from 30s to 120s in Low Power Mode)
     const timerInterval = settings?.lowPowerMode ? 120_000 : 30_000;
@@ -238,11 +251,19 @@ export const HomePage: React.FC<HomePageProps> = ({
     } else if ('releaseYear' in item && 'tracks' in item) {
       onPlayAlbum(item as Album);
     }
-  };
+  };  // Provider shelves composed with this device's history: Quick Picks first, "Jump back
+  // in" next, taste-seeded shelves after that, then anchors and this build's rotation.
+  const feedSections = useMemo(
+    () => composeHomeFeed({ sections, profile, recent: recentlyPlayed }),
+    [sections, profile, recentlyPlayed]
+  );
 
   // Extract Quick Picks section if available
-  const quickPicksSection = sections.find((s) => s.id === 'quick-picks' || s.title.toLowerCase().includes('quick picks'));
-  const otherSections = sections.filter((s) => s !== quickPicksSection);
+  const quickPicksSection = feedSections.find(
+    (s) => s.id === 'quick-picks' || s.title.toLowerCase().includes('quick picks')
+  );
+
+  const otherSections = feedSections.filter((s) => s !== quickPicksSection);
 
   // Group quick picks into 4-song chunks for YouTube Music style swipeable columns
   const quickPicksSongs = (quickPicksSection?.items || []).filter(
@@ -266,9 +287,17 @@ export const HomePage: React.FC<HomePageProps> = ({
     >
       {/* Top Page Header */}
       <div className="flex items-center justify-between pt-1">
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-          Listen Now
-        </h1>
+        <div className="flex items-center gap-2 min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+            Listen Now
+          </h1>
+          {isRefreshing && (
+            <span className="flex items-center gap-1 text-[10px] font-semibold text-neutral-400 uppercase tracking-wider shrink-0">
+              <RotateCw className="w-3 h-3 animate-spin" />
+              Updating
+            </span>
+          )}
+        </div>
         {onOpenAccountModal && (
           <button
             onClick={onOpenAccountModal}
@@ -364,6 +393,23 @@ export const HomePage: React.FC<HomePageProps> = ({
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Honest empty state: nothing personalised to show yet, never fake rows */}
+      {!isLoading && !error && feedSections.length === 0 && (
+        <div className="p-5 rounded-2xl bg-white/[0.04] border border-white/10 text-center">
+          <p className="text-sm font-semibold text-white">Nothing new to show yet</p>
+          <p className="text-xs text-neutral-400 mt-1 leading-relaxed max-w-md mx-auto">
+            Your home feed is built from what you actually play. Play a few songs or add
+            some favourites and recommendations will appear here.
+          </p>
+          <button
+            onClick={() => loadHomeData(true, activeMood)}
+            className="mt-3 px-3.5 py-1.5 rounded-full bg-white text-black text-xs font-bold active:scale-95 transition"
+          >
+            Refresh
+          </button>
         </div>
       )}
 

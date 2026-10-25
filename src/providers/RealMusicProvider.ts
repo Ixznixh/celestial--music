@@ -76,10 +76,11 @@ export class RealMusicProvider implements MusicProvider {
     }
   }
 
-  async getHomeSections(forceRefresh: boolean = true, mood?: string): Promise<HomeSection[]> {
+  async getHomeSections(forceRefresh: boolean = true, mood?: string, seeds: string[] = []): Promise<HomeSection[]> {
     const params: Record<string, string | undefined> = {};
     if (forceRefresh) params.refresh = 'true';
     if (mood) params.mood = mood;
+    if (seeds && seeds.length > 0) params.seeds = seeds.join(',');
     params._t = Date.now().toString();
 
     const res = await musicApi.get<{ sections: HomeSection[] } | HomeSection[]>('/home', params);

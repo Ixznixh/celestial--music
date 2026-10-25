@@ -25,6 +25,7 @@
 import { Song, PlaybackState, RepeatMode, AppSettings } from '../types';
 import { QueueManager } from './QueueManager';
 import { db, isDemoItem } from '../services/indexedDB';
+import { bumpPlayCount } from '../services/tasteProfile';
 import { extractYouTubeVideoId, parseDurationInSeconds } from '../utils/formatters';
 import { diagnostics } from './PlaybackDiagnostics';
 import { backgroundAudioManager } from './BackgroundAudioManager';
@@ -395,6 +396,9 @@ export class AudioPlayer {
         }
       } else if (document.visibilityState === 'visible') {
         // Tab brought to foreground: re-sync state & UI
+        // A Web Audio graph can be suspended while backgrounded: the element would then
+        // report "playing" with no sound at all.
+        audioGraph.resume();
         if (this.isYTActive && this.ytPlayer && typeof this.ytPlayer.getCurrentTime === 'function') {
           try {
             const ytTime = this.ytPlayer.getCurrentTime();
@@ -907,6 +911,7 @@ export class AudioPlayer {
     const nextSong = upcomingTracks.length > 0 ? upcomingTracks[0] : null;
     this.runWhenIdle(() => {
       db.addRecentlyPlayed(song).catch(() => {});
+      bumpPlayCount(song).catch(() => {});
       db.cacheCurrentAndNextTrack(
         song,
         nextSong,
@@ -1451,6 +1456,9 @@ export class AudioPlayer {
 
     backgroundAudioManager.startPlaybackAnchor(song);
     claimPlaybackAudioSession();
+    // Resume the DSP graph too: a suspended AudioContext plays through the element while
+    // producing no sound, which reads as "playing" with silence.
+    audioGraph.resume();
     this.intendedPlayState = true;
     this.state.error = null;
     // Every explicit play intent (in-app tap, lock screen, Control Center) may retry the
