@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { LogIn, LogOut, User as UserIcon, CloudCheck, Loader2, Sparkles, Youtube, Settings } from 'lucide-react';
+import { subscribeToAuth, signInWithGoogle, signOutUser, signOutYouTube } from '../../lib/firebase';
 import { User } from 'firebase/auth';
-import { subscribeToAuth, signInWithGoogle, signOutUser } from '../../lib/firebase';
+
+// Direct YouTube OAuth functions
+import { signInWithYouTube, getYouTubeAccessToken, clearYouTubeTokens } from '../../lib/firebase';
 
 interface AuthButtonProps {
   onOpenAccountModal?: () => void;
@@ -25,12 +28,26 @@ export const AuthButton: React.FC<AuthButtonProps> = ({ onOpenAccountModal }) =>
   const handleSignIn = async () => {
     try {
       setSigningIn(true);
-      await signInWithGoogle();
+      // Try direct YouTube OAuth first, fallback to Firebase Google
+      const { success, message } = await signInWithYouTube();
+      if (!success) {
+        // Fallback to Firebase Google sign-in
+        await signInWithGoogle();
+      }
       if (onOpenAccountModal) {
         onOpenAccountModal();
       }
     } catch (err: any) {
       console.error('Sign-In Error:', err);
+      // Fallback to Firebase Google sign-in on error
+      try {
+        await signInWithGoogle();
+        if (onOpenAccountModal) {
+          onOpenAccountModal();
+        }
+      } catch (err2: any) {
+        console.error('Sign-In fallback failed:', err2);
+      }
     } finally {
       setSigningIn(false);
     }
@@ -39,6 +56,8 @@ export const AuthButton: React.FC<AuthButtonProps> = ({ onOpenAccountModal }) =>
   const handleSignOut = async () => {
     try {
       setDropdownOpen(false);
+      // Sign out from both YouTube OAuth and Firebase
+      await signOutYouTube();
       await signOutUser();
     } catch (err: any) {
       console.error('Sign-Out Error:', err);
@@ -187,4 +206,3 @@ export const AuthButton: React.FC<AuthButtonProps> = ({ onOpenAccountModal }) =>
     </div>
   );
 };
-

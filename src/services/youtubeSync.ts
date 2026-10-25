@@ -1,5 +1,5 @@
 import { Song, Playlist } from '../types';
-import { getYouTubeAccessToken } from '../lib/firebase';
+import { getYouTubeAccessToken, setYouTubeAccessToken, getYouTubeRefreshToken, refreshYouTubeToken, signOutYouTube } from '../lib/firebase';
 import { musicApi } from './musicApi';
 
 export interface YouTubePlaylistItem {
@@ -15,8 +15,9 @@ export interface ImportedYouTubePlaylistResult {
   tracks: Song[];
 }
 
-/**
- * Fetch Liked Songs from Google / YouTube account using OAuth Access Token
+/** 
+ * Fetch Liked Songs from YouTube account using Direct OAuth Access Token
+ * Token is obtained via YouTube OAuth flow (signInWithYouTube)
  */
 export async function fetchYouTubeLikedSongs(): Promise<Song[]> {
   const token = getYouTubeAccessToken();
@@ -49,7 +50,7 @@ export async function fetchYouTubeLikedSongs(): Promise<Song[]> {
             return {
               id: `yt_liked_${item.id}`,
               youtubeId: item.id,
-              title: title.replace(/\\(Official Audio\\)|\\(Official Music Video\\)|\\(Audio\\)|\\(Lyric Video\\)/gi, '').trim(),
+              title: title.replace(/\(Official Audio\)|\(Official Music Video\)|\(Audio\)|\(Lyric Video\)/gi, '').trim(),
               artist: channel.replace('- Topic', '').trim(),
               album: 'YouTube Liked Songs',
               artworkUrl,
@@ -60,7 +61,7 @@ export async function fetchYouTubeLikedSongs(): Promise<Song[]> {
         }
       }
     } catch (err) {
-      console.warn('Direct YouTube API fetch failed, falling back to top music provider:', err);
+      console.warn('Direct YouTube API fetch failed, falling back to search provider:', err);
     }
   }
 
@@ -81,8 +82,9 @@ export async function fetchYouTubeLikedSongs(): Promise<Song[]> {
   return [];
 }
 
-/**
- * Fetch Most Viewed / Popular Songs from YouTube for Google Account or Category
+/** 
+ * Fetch Most Viewed / Popular Songs from YouTube using Direct OAuth Access Token
+ * Token is obtained via YouTube OAuth flow (signInWithYouTube)
  */
 export async function fetchYouTubeMostViewed(categoryQuery?: string): Promise<Song[]> {
   const token = getYouTubeAccessToken();
@@ -151,7 +153,7 @@ function parseISO8601Duration(iso?: string): number {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
-/**
+/** 
  * Import tracks from a pasted YouTube Playlist or Video URL/ID or search term.
  * Preserves the authentic YouTube Playlist Title, structure, and metadata as a separate playlist.
  */

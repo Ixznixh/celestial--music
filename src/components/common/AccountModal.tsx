@@ -24,7 +24,7 @@ import {
   UploadCloud
 } from 'lucide-react';
 import { User } from 'firebase/auth';
-import { signInWithGoogle, signOutUser, fetchUserCachedSongsFromFirestore } from '../../lib/firebase';
+import { signInWithGoogle, signOutUser, signOutYouTube, signInWithYouTube, fetchUserCachedSongsFromFirestore, getYouTubeAccessToken } from '../../lib/firebase';
 import { fetchYouTubeLikedSongs, fetchYouTubeMostViewed, importYouTubePlaylistUrl } from '../../services/youtubeSync';
 import { Song, Playlist } from '../../types';
 import { db } from '../../services/indexedDB';
@@ -173,10 +173,23 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   const handleSignIn = async () => {
     try {
       setSigningIn(true);
-      await signInWithGoogle();
-      setSyncSuccessMsg('Successfully signed in with Google Account!');
+      // Try direct YouTube OAuth first
+      const { success, message } = await signInWithYouTube();
+      if (!success) {
+        // Fallback to Firebase Google sign-in
+        await signInWithGoogle();
+      }
+      setSyncSuccessMsg(success ? message : 'Sign-in successful!');
     } catch (err: any) {
       console.error('Sign-in error:', err);
+      // Fallback to Firebase Google sign-in on error
+      try {
+        await signInWithGoogle();
+        setSyncSuccessMsg('Sign-in successful!');
+      } catch (err2: any) {
+        console.error('Sign-in fallback failed:', err2);
+        setSyncSuccessMsg('Sign-in failed. Please try again.');
+      }
     } finally {
       setSigningIn(false);
     }
@@ -354,7 +367,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                         Google Verified
                       </span>
                     </div>
-                    <p className="text-[11px] text-neutral-400 mt-0.5 truncate">{user.email}</p>
+                    <p className="text-[11px] text-neutral-400 mt-0.5 truncate">{user.email || getYouTubeAccessToken() ? 'YouTubeConnected' : ''}</p>
                     <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1 text-[10px] text-neutral-300">
                       <span className="text-neutral-400 shrink-0">
                         {favoriteSongs.length} Liked Tracks
@@ -382,9 +395,9 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                     <UserIcon className="w-4 h-4 sm:w-5 sm:h-5 text-neutral-400" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="text-xs sm:text-sm font-bold text-white">Sign in with Google</h3>
+                    <h3 className="text-xs sm:text-sm font-bold text-white">Sign in with YouTube</h3>
                     <p className="text-[11px] text-neutral-400 mt-0.5 truncate">
-                      Sync playlists and cloud backups
+                      Sync YouTube Liked Songs and playlists
                     </p>
                   </div>
                 </div>
