@@ -58,24 +58,28 @@ export function getBestThumbnail(thumbnails: any, fallback: string = 'https://im
   if (!url) return fallback;
   if (url.startsWith('//')) url = `https:${url}`;
 
-  // Upgrade Google/YouTube user content to crystal clear 800x800 resolution
+  // Upgrade Google/YouTube user content to crystal clear 544x544 resolution (fast & crisp)
   if (url.includes('googleusercontent.com') || url.includes('ggpht.com')) {
-    url = url.replace(/=w\d+-h\d+[^?&#]*/g, '=w800-h800-l90-rj');
-    url = url.replace(/=s\d+[^?&#]*/g, '=s800-c-k-c0x00ffffff-no-rj');
+    if (url.includes('=w') || url.includes('=s')) {
+      url = url.replace(/=w\d+-h\d+[^?&#]*/g, '=w544-h544-l90-rj');
+      url = url.replace(/=s\d+[^?&#]*/g, '=s544-c-k-c0x00ffffff-no-rj');
+    } else {
+      url = `${url}=w544-h544-l90-rj`;
+    }
   }
 
-  // Upgrade YouTube video thumbnails to full crystal-clear HD resolution (hq720 or maxresdefault)
+  // Use reliable YouTube video thumbnails (hqdefault is 480x360, 100% reliable, never 404s)
   if (url.includes('i.ytimg.com')) {
     // Strip downsampling sqp and rs query parameters that cause pixelation
     url = url.replace(/[?&]sqp=[^&#]*/g, '').replace(/[?&]rs=[^&#]*/g, '');
     url = url.replace(/\?&/g, '?').replace(/[?&]$/, '');
 
-    // If it's a downscaled variant like default.jpg or mqdefault.jpg, upgrade to hq720.jpg
+    // Upgrade low-res default.jpg to reliable hqdefault.jpg
     const vMatch = url.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//);
     if (vMatch && vMatch[1]) {
       const vidId = vMatch[1];
-      if (url.includes('/default.jpg') || url.includes('/mqdefault.jpg') || url.includes('/hqdefault.jpg')) {
-        url = `https://i.ytimg.com/vi/${vidId}/hq720.jpg`;
+      if (url.includes('/default.jpg')) {
+        url = `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`;
       }
     }
   }

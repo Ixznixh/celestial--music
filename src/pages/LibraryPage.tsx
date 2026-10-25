@@ -7,6 +7,7 @@ import { formatTime } from '../utils/formatters';
 import { useLongPress } from '../hooks/useLongPress';
 import { useDownloads, formatBytes } from '../hooks/useDownloads';
 import { isAutoDownloadEnabled, setAutoDownloadEnabled } from '../services/autoDownload';
+import { providerManager } from '../services/providerManager';
 import { 
   ListMusic, 
   User, 
@@ -66,6 +67,44 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
   const handleAutoDownloadToggle = (enabled: boolean) => {
     setAutoDownload(enabled);
     setAutoDownloadEnabled(enabled).catch(() => {});
+  };
+
+  const [downloadingPlaylistId, setDownloadingPlaylistId] = useState<string | null>(null);
+
+  const handleDownloadPlaylist = async (pl: Playlist) => {
+    if (downloadingPlaylistId) return;
+    let tracks = pl.tracks || [];
+    if (tracks.length === 0) {
+      setDownloadingPlaylistId(pl.id);
+      try {
+        const fullPl = await providerManager.getActiveProvider().getPlaylist(pl.id);
+        if (fullPl?.tracks?.length) {
+          tracks = fullPl.tracks;
+        }
+      } catch (e) {
+        console.warn('Failed to load playlist for download:', e);
+      }
+      setDownloadingPlaylistId(null);
+    }
+
+    if (tracks.length === 0) return;
+
+    const allDownloaded = tracks.every((t) => downloads.isDownloaded(t.id));
+    if (allDownloaded) {
+      if (window.confirm(`Remove offline downloads for all ${tracks.length} songs in "${pl.title}"?`)) {
+        for (const t of tracks) {
+          await downloads.removeDownload(t.id);
+        }
+      }
+      return;
+    }
+
+    setDownloadingPlaylistId(pl.id);
+    const pending = tracks.filter((t) => !downloads.isDownloaded(t.id));
+    for (const song of pending) {
+      await downloads.downloadSong(song);
+    }
+    setDownloadingPlaylistId(null);
   };
 
   return (
@@ -191,25 +230,32 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
                 <p className="text-[10px] text-neutral-400 truncate mt-0.5">{favoriteSongs.length} tracks</p>
               </div>
 
-              {playlists.slice(0, 5).map((pl) => (
-                <div
-                  key={pl.id}
-                  onClick={() => onNavigate({ type: 'playlist', playlistId: pl.id })}
-                  className="p-2 rounded-xl bg-neutral-900/80 hover:bg-neutral-850 border border-neutral-800/80 cursor-pointer active:scale-95 transition"
-                >
-                  <PlaylistThumbnail
-                    artworkUrl={pl.artworkUrl}
-                    collageArtworks={pl.collageArtworks}
-                    trackCount={pl.trackCount}
-                    title={pl.title}
-                    rounded="rounded-lg"
-                    className="w-full aspect-square mb-1.5"
-                    showPlayButton={false}
-                  />
-                  <p className="text-xs font-semibold text-white truncate leading-tight">{pl.title}</p>
-                  <p className="text-[10px] text-neutral-400 truncate mt-0.5">{pl.trackCount} tracks</p>
-                </div>
-              ))}
+              {playlists.slice(0, 5).map((pl) => {
+                const isAllDl = Boolean(pl.tracks && pl.tracks.length > 0 && pl.tracks.every((t) => downloads.isDownloaded(t.id)));
+                const isDlIng = downloadingPlaylistId === pl.id || Boolean(pl.tracks && pl.tracks.some((t) => downloads.isDownloading(t.id)));
+                return (
+                  <div
+                    key={pl.id}
+                    onClick={() => onNavigate({ type: 'playlist', playlistId: pl.id })}
+                    className="p-2 rounded-xl bg-neutral-900/80 hover:bg-neutral-850 border border-neutral-800/80 cursor-pointer active:scale-95 transition"
+                  >
+                    <PlaylistThumbnail
+                      artworkUrl={pl.artworkUrl}
+                      collageArtworks={pl.collageArtworks}
+                      trackCount={pl.trackCount}
+                      title={pl.title}
+                      rounded="rounded-lg"
+                      className="w-full aspect-square mb-1.5"
+                      showPlayButton={false}
+                      onDownload={() => handleDownloadPlaylist(pl)}
+                      isDownloaded={isAllDl}
+                      isDownloading={isDlIng}
+                    />
+                    <p className="text-xs font-semibold text-white truncate leading-tight">{pl.title}</p>
+                    <p className="text-[10px] text-neutral-400 truncate mt-0.5">{pl.trackCount} tracks</p>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -271,29 +317,34 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
                 <p className="text-[11px] text-neutral-400 truncate">{downloads.downloadCount} tracks</p>
               </div>
             )}
-            )
 
-            {playlists.map((pl) => (
-              <div
-                key={pl.id}
-                onClick={() => onNavigate({ type: 'playlist', playlistId: pl.id })}
-                className="p-2.5 rounded-2xl bg-neutral-900/80 hover:bg-neutral-850 border border-neutral-800/80 cursor-pointer active:scale-95 transition relative group"
-              >
-                <PlaylistThumbnail
-                  artworkUrl={pl.artworkUrl}
-                  collageArtworks={pl.collageArtworks}
-                  trackCount={pl.trackCount}
-                  title={pl.title}
-                  rounded="rounded-xl"
-                  className="w-full aspect-square shadow-md mb-2"
-                  onPlay={() => {
-                    if (pl.tracks && pl.tracks.length > 0) {
-                      onPlaySong(pl.tracks[0], pl.tracks);
-                    }
-                  }}
-                />
-                <p className="text-xs font-semibold text-white truncate">{pl.title}</p>
-                <p className="text-[11px] text-neutral-400 truncate">{pl.trackCount} tracks</p>
+            {playlists.map((pl) => {
+              const isAllDl = Boolean(pl.tracks && pl.tracks.length > 0 && pl.tracks.every((t) => downloads.isDownloaded(t.id)));
+              const isDlIng = downloadingPlaylistId === pl.id || Boolean(pl.tracks && pl.tracks.some((t) => downloads.isDownloading(t.id)));
+              return (
+                <div
+                  key={pl.id}
+                  onClick={() => onNavigate({ type: 'playlist', playlistId: pl.id })}
+                  className="p-2.5 rounded-2xl bg-neutral-900/80 hover:bg-neutral-850 border border-neutral-800/80 cursor-pointer active:scale-95 transition relative group"
+                >
+                  <PlaylistThumbnail
+                    artworkUrl={pl.artworkUrl}
+                    collageArtworks={pl.collageArtworks}
+                    trackCount={pl.trackCount}
+                    title={pl.title}
+                    rounded="rounded-xl"
+                    className="w-full aspect-square shadow-md mb-2"
+                    onPlay={() => {
+                      if (pl.tracks && pl.tracks.length > 0) {
+                        onPlaySong(pl.tracks[0], pl.tracks);
+                      }
+                    }}
+                    onDownload={() => handleDownloadPlaylist(pl)}
+                    isDownloaded={isAllDl}
+                    isDownloading={isDlIng}
+                  />
+                  <p className="text-xs font-semibold text-white truncate">{pl.title}</p>
+                  <p className="text-[11px] text-neutral-400 truncate">{pl.trackCount} tracks</p>
 
                 {pl.isCustom && (
                   <button
@@ -310,7 +361,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
                   </button>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

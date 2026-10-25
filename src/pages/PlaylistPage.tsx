@@ -61,6 +61,7 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({
 
   const [isDownloadingPlaylist, setIsDownloadingPlaylist] = useState(false);
   const [downloadStep, setDownloadStep] = useState<{ current: number; total: number } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const downloadedTracksCount = playlist?.tracks.filter((t) => isDownloaded(t.id)).length || 0;
   const isAllDownloaded = Boolean(
@@ -74,11 +75,29 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({
   );
 
   const handleToggleDownloadPlaylist = async () => {
-    if (!playlist || playlist.tracks.length === 0 || isAnyDownloading) return;
+    if (!playlist || isAnyDownloading) return;
+
+    let tracks = playlist.tracks || [];
+    if (tracks.length === 0) {
+      setIsDownloadingPlaylist(true);
+      try {
+        const provider = providerManager.getActiveProvider();
+        const fullPl = await provider.getPlaylist(playlistId);
+        if (fullPl && fullPl.tracks && fullPl.tracks.length > 0) {
+          tracks = fullPl.tracks;
+          setPlaylist(fullPl);
+        }
+      } catch (e) {
+        console.warn('Failed to load tracks for playlist download:', e);
+      }
+      setIsDownloadingPlaylist(false);
+    }
+
+    if (tracks.length === 0) return;
 
     if (isAllDownloaded) {
-      if (window.confirm(`Remove offline downloads for all ${playlist.tracks.length} songs in "${playlist.title}"?`)) {
-        for (const t of playlist.tracks) {
+      if (window.confirm(`Remove offline downloads for all ${tracks.length} songs in "${playlist.title}"?`)) {
+        for (const t of tracks) {
           await removeDownload(t.id);
         }
       }
@@ -86,7 +105,7 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({
     }
 
     setIsDownloadingPlaylist(true);
-    const pending = playlist.tracks.filter((t) => !isDownloaded(t.id));
+    const pending = tracks.filter((t) => !isDownloaded(t.id));
     setDownloadStep({ current: 0, total: pending.length });
 
     for (let i = 0; i < pending.length; i++) {
@@ -102,11 +121,13 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({
 
   // Find playlist either from user playlists state (IndexedDB) or provider
   useEffect(() => {
+    setIsLoading(true);
     const userPl = userPlaylists.find((p) => p.id === playlistId);
     if (userPl) {
       setPlaylist(userPl);
       setEditTitle(userPl.title);
       setEditDesc(userPl.description || '');
+      setIsLoading(false);
       return;
     }
 
@@ -122,8 +143,26 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({
       .catch((err) => {
         console.warn('Failed to load playlist:', err);
         setPlaylist(null);
+      })
+      .finally(() => {
+        setIsLoading(false);
       });
   }, [playlistId, userPlaylists]);
+
+  if (isLoading && !playlist) {
+    return (
+      <div className="space-y-6 animate-pulse">
+        <div className="flex flex-col sm:flex-row items-center sm:items-end gap-6 p-6 rounded-3xl bg-neutral-900/40 border border-neutral-800">
+          <div className="w-44 sm:w-52 md:w-60 aspect-square rounded-2xl bg-neutral-800" />
+          <div className="space-y-3 flex-1 w-full sm:w-auto">
+            <div className="h-4 w-20 bg-neutral-800 rounded" />
+            <div className="h-8 w-3/4 bg-neutral-800 rounded" />
+            <div className="h-4 w-1/2 bg-neutral-800 rounded" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!playlist) {
     return (

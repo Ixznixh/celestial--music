@@ -6,6 +6,7 @@ import { ArtworkImage } from '../components/common/ArtworkImage';
 import { PlaylistThumbnail } from '../components/common/PlaylistThumbnail';
 import { formatTime } from '../utils/formatters';
 import { useLongPress } from '../hooks/useLongPress';
+import { useDownloads } from '../hooks/useDownloads';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, 
@@ -68,6 +69,45 @@ export const SearchPage: React.FC<SearchPageProps> = ({
   const [, startTransition] = useTransition();
 
   const searchInputRef = React.useRef<HTMLInputElement>(null);
+
+  const downloads = useDownloads();
+  const [downloadingPlaylistId, setDownloadingPlaylistId] = useState<string | null>(null);
+
+  const handleDownloadPlaylist = async (pl: Playlist) => {
+    if (downloadingPlaylistId) return;
+    let tracks = pl.tracks || [];
+    if (tracks.length === 0) {
+      setDownloadingPlaylistId(pl.id);
+      try {
+        const fullPl = await providerManager.getActiveProvider().getPlaylist(pl.id);
+        if (fullPl?.tracks?.length) {
+          tracks = fullPl.tracks;
+        }
+      } catch (e) {
+        console.warn('Failed to load playlist for download:', e);
+      }
+      setDownloadingPlaylistId(null);
+    }
+
+    if (tracks.length === 0) return;
+
+    const allDownloaded = tracks.every((t) => downloads.isDownloaded(t.id));
+    if (allDownloaded) {
+      if (window.confirm(`Remove offline downloads for all ${tracks.length} songs in "${pl.title}"?`)) {
+        for (const t of tracks) {
+          await downloads.removeDownload(t.id);
+        }
+      }
+      return;
+    }
+
+    setDownloadingPlaylistId(pl.id);
+    const pending = tracks.filter((t) => !downloads.isDownloaded(t.id));
+    for (const song of pending) {
+      await downloads.downloadSong(song);
+    }
+    setDownloadingPlaylistId(null);
+  };
 
   const { getHandlers } = useLongPress<Song>((song) => onOpenContextMenu(song));
 
@@ -534,29 +574,36 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                 <ListMusic className="w-4 h-4 text-rose-500" /> Playlists
               </h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
-                {results.playlists.map((playlist) => (
-                  <div
-                    key={playlist.id}
-                    onClick={() => onNavigate({ type: 'playlist', playlistId: playlist.id })}
-                    className="p-2.5 rounded-2xl bg-neutral-900/60 hover:bg-neutral-850/80 border border-neutral-800/80 cursor-pointer active:scale-95 transition"
-                  >
-                    <PlaylistThumbnail
-                      artworkUrl={playlist.artworkUrl}
-                      collageArtworks={playlist.collageArtworks}
-                      trackCount={playlist.trackCount}
-                      title={playlist.title}
-                      rounded="rounded-xl"
-                      className="w-full aspect-square shadow-md mb-2"
-                      onPlay={() => {
-                        if (playlist.tracks && playlist.tracks.length > 0) {
-                          onPlaySong(playlist.tracks[0], playlist.tracks);
-                        }
-                      }}
-                    />
-                    <p className="text-xs font-semibold text-white truncate">{playlist.title}</p>
-                    <p className="text-[11px] text-neutral-400 truncate">{playlist.trackCount} tracks</p>
-                  </div>
-                ))}
+                {results.playlists.map((playlist) => {
+                  const isAllDl = Boolean(playlist.tracks && playlist.tracks.length > 0 && playlist.tracks.every((t) => downloads.isDownloaded(t.id)));
+                  const isDlIng = downloadingPlaylistId === playlist.id || Boolean(playlist.tracks && playlist.tracks.some((t) => downloads.isDownloading(t.id)));
+                  return (
+                    <div
+                      key={playlist.id}
+                      onClick={() => onNavigate({ type: 'playlist', playlistId: playlist.id })}
+                      className="p-2.5 rounded-2xl bg-neutral-900/60 hover:bg-neutral-850/80 border border-neutral-800/80 cursor-pointer active:scale-95 transition"
+                    >
+                      <PlaylistThumbnail
+                        artworkUrl={playlist.artworkUrl}
+                        collageArtworks={playlist.collageArtworks}
+                        trackCount={playlist.trackCount}
+                        title={playlist.title}
+                        rounded="rounded-xl"
+                        className="w-full aspect-square shadow-md mb-2"
+                        onPlay={() => {
+                          if (playlist.tracks && playlist.tracks.length > 0) {
+                            onPlaySong(playlist.tracks[0], playlist.tracks);
+                          }
+                        }}
+                        onDownload={() => handleDownloadPlaylist(playlist)}
+                        isDownloaded={isAllDl}
+                        isDownloading={isDlIng}
+                      />
+                      <p className="text-xs font-semibold text-white truncate">{playlist.title}</p>
+                      <p className="text-[11px] text-neutral-400 truncate">{playlist.trackCount} tracks</p>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

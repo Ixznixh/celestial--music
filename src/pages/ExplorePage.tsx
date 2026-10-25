@@ -17,12 +17,15 @@ import {
   Heart,
   Moon,
   Smile,
-  PartyPopper
+  PartyPopper,
+  Download,
+  ArrowDown
 } from 'lucide-react';
 import { Song, Album, Artist, Playlist, AppView } from '../types';
 import { providerManager } from '../services/providerManager';
 import { ArtworkImage } from '../components/common/ArtworkImage';
 import { PlaylistThumbnail } from '../components/common/PlaylistThumbnail';
+import { useDownloads } from '../hooks/useDownloads';
 
 interface ExplorePageProps {
   onNavigate: (view: AppView) => void;
@@ -55,6 +58,44 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
   const [trendingAlbums, setTrendingAlbums] = useState<Album[]>([]);
   const [topPlaylists, setTopPlaylists] = useState<Playlist[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [downloadingPlaylistId, setDownloadingPlaylistId] = useState<string | null>(null);
+  const downloads = useDownloads();
+
+  const handleDownloadPlaylist = async (pl: Playlist) => {
+    if (downloadingPlaylistId) return;
+    let tracks = pl.tracks || [];
+    if (tracks.length === 0) {
+      setDownloadingPlaylistId(pl.id);
+      try {
+        const fullPl = await providerManager.getActiveProvider().getPlaylist(pl.id);
+        if (fullPl?.tracks?.length) {
+          tracks = fullPl.tracks;
+        }
+      } catch (e) {
+        console.warn('Failed to load playlist for download:', e);
+      }
+      setDownloadingPlaylistId(null);
+    }
+
+    if (tracks.length === 0) return;
+
+    const allDownloaded = tracks.every((t) => downloads.isDownloaded(t.id));
+    if (allDownloaded) {
+      if (window.confirm(`Remove offline downloads for all ${tracks.length} songs in "${pl.title}"?`)) {
+        for (const t of tracks) {
+          await downloads.removeDownload(t.id);
+        }
+      }
+      return;
+    }
+
+    setDownloadingPlaylistId(pl.id);
+    const pending = tracks.filter((t) => !downloads.isDownloaded(t.id));
+    for (const song of pending) {
+      await downloads.downloadSong(song);
+    }
+    setDownloadingPlaylistId(null);
+  };
 
   const fetchExploreData = async (mood: string) => {
     setIsLoading(true);
@@ -222,38 +263,35 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
           </h2>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
-            {topPlaylists.map((playlist) => (
-              <div
-                key={playlist.id}
-                onClick={() => onNavigate({ type: 'playlist', playlistId: playlist.id })}
-                className="p-2 rounded-2xl bg-neutral-900/60 hover:bg-neutral-900 border border-white/5 hover:border-white/15 transition cursor-pointer group flex flex-col"
-              >
-                <div className="relative aspect-square rounded-xl overflow-hidden mb-2 bg-neutral-800">
-                  <PlaylistThumbnail
-                    artworkUrl={playlist.artworkUrl}
-                    collageArtworks={playlist.collageArtworks}
-                    trackCount={playlist.trackCount}
-                    className="w-full h-full group-hover:scale-105 transition duration-300"
-                  />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onPlayPlaylist(playlist);
-                      }}
-                      className="p-3 rounded-full bg-white text-black hover:scale-110 transition shadow-xl"
-                    >
-                      <Play className="w-4 h-4 fill-black" />
-                    </button>
+            {topPlaylists.map((playlist) => {
+              const isAllDl = Boolean(playlist.tracks && playlist.tracks.length > 0 && playlist.tracks.every((t) => downloads.isDownloaded(t.id)));
+              const isDlIng = downloadingPlaylistId === playlist.id || Boolean(playlist.tracks && playlist.tracks.some((t) => downloads.isDownloading(t.id)));
+              return (
+                <div
+                  key={playlist.id}
+                  onClick={() => onNavigate({ type: 'playlist', playlistId: playlist.id })}
+                  className="p-2 rounded-2xl bg-neutral-900/60 hover:bg-neutral-900 border border-white/5 hover:border-white/15 transition cursor-pointer group flex flex-col"
+                >
+                  <div className="relative aspect-square rounded-xl overflow-hidden mb-2 bg-neutral-800">
+                    <PlaylistThumbnail
+                      artworkUrl={playlist.artworkUrl}
+                      collageArtworks={playlist.collageArtworks}
+                      trackCount={playlist.trackCount}
+                      className="w-full h-full group-hover:scale-105 transition duration-300"
+                      onPlay={() => onPlayPlaylist(playlist)}
+                      onDownload={() => handleDownloadPlaylist(playlist)}
+                      isDownloaded={isAllDl}
+                      isDownloading={isDlIng}
+                    />
                   </div>
-                </div>
 
                 <p className="text-xs font-bold text-white truncate">{playlist.title}</p>
                 <p className="text-[11px] text-neutral-400 truncate mt-0.5">
                   {playlist.trackCount || 'YouTube'} tracks
                 </p>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

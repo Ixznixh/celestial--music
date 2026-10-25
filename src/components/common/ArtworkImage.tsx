@@ -16,38 +16,36 @@ interface ArtworkImageProps {
 }
 
 /**
- * Dynamically adjusts artwork resolution based on placement (from high-density 240px up to 800px crystal clear)
- * ensuring sharp visuals on all Retina & mobile screens without blurry compression artifacts.
+ * Dynamically adjusts artwork resolution based on placement (from compact 240px up to 544px crystal clear)
+ * ensuring ultra-fast load times on all screens without blurry compression or missing 404 variants.
  */
 export function upgradeArtworkUrl(url?: string, size: 'small' | 'medium' | 'large' | 'full' = 'medium'): string | undefined {
   if (!url) return url;
   let clean = url.startsWith('//') ? `https:${url}` : url;
 
-  const dim = size === 'small' ? 320 : size === 'medium' ? 500 : 800;
+  const dim = size === 'small' ? 240 : size === 'medium' ? 400 : 544;
 
   // Upgrade Google/YouTube user content to crystal clear resolution
   if (clean.includes('googleusercontent.com') || clean.includes('ggpht.com')) {
-    clean = clean.replace(/=w\d+-h\d+[^?&#]*/g, `=w${dim}-h${dim}-l90-rj`);
-    clean = clean.replace(/=s\d+[^?&#]*/g, `=s${dim}-c-k-c0x00ffffff-no-rj`);
+    if (clean.includes('=w') || clean.includes('=s')) {
+      clean = clean.replace(/=w\d+-h\d+[^?&#]*/g, `=w${dim}-h${dim}-l90-rj`);
+      clean = clean.replace(/=s\d+[^?&#]*/g, `=s${dim}-c-k-c0x00ffffff-no-rj`);
+    } else {
+      clean = `${clean}=w${dim}-h${dim}-l90-rj`;
+    }
   }
 
-  // Remove aggressive downsampling parameters from YouTube thumbnails
+  // Pick the thumbnail variant that actually matches the box it lands in.
+  // hqdefault (480x360) is available on 100% of YouTube tracks and never 404s.
+  // mqdefault (320x180) is ultra-fast for rows and small cards.
   if (clean.includes('i.ytimg.com')) {
     clean = clean.replace(/[?&]sqp=[^&#]*/g, '').replace(/[?&]rs=[^&#]*/g, '');
     clean = clean.replace(/\?&/g, '?').replace(/[?&]$/, '');
 
-    // Pick the thumbnail variant that actually matches the box it lands in. Requesting
-    // maxresdefault (1280x720) for a 40px row was the single biggest reason artwork
-    // arrived late: mq/hq cover every small and grid placement at a fraction of the bytes.
     const match = clean.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//);
     if (match && match[1]) {
       const vidId = match[1];
-      const variant =
-        size === 'small'
-          ? 'mqdefault.jpg'
-          : size === 'medium'
-            ? 'hqdefault.jpg'
-            : 'maxresdefault.jpg';
+      const variant = size === 'small' ? 'mqdefault.jpg' : 'hqdefault.jpg';
       clean = `https://i.ytimg.com/vi/${vidId}/${variant}`;
     }
   }
@@ -69,7 +67,7 @@ export const ArtworkImage: React.FC<ArtworkImageProps> = ({
   // Upgraded source based on optimal requested size
   const optimizedSrc = useMemo(() => upgradeArtworkUrl(src, size as 'small' | 'medium' | 'large' | 'full'), [src, size]);
 
-  // Stage 0: Direct maxres/HD src, Stage 1: sddefault (640x480), Stage 2: hqdefault (480x360), Stage 3: /api/image-proxy, Stage 4: placeholder
+  // Stage 0: Direct optimized src, Stage 1: hqdefault.jpg (reliable), Stage 2: /api/image-proxy, Stage 3: placeholder
   const [stage, setStage] = useState<number>(0);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
 
@@ -95,30 +93,22 @@ export const ArtworkImage: React.FC<ArtworkImageProps> = ({
       return optimizedSrc;
     }
     if (stage === 1 && videoId) {
-      return `https://i.ytimg.com/vi/${videoId}/sddefault.jpg`;
-    }
-    if (stage === 2 && videoId) {
       return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
     }
-    if (stage === 3 && optimizedSrc) {
-      return `/api/image-proxy?url=${encodeURIComponent(optimizedSrc)}`;
+    if (stage === 2 && (optimizedSrc || videoId)) {
+      const target = optimizedSrc || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+      return `/api/image-proxy?url=${encodeURIComponent(target)}`;
     }
     return null;
   }, [optimizedSrc, stage, videoId]);
 
   const handleError = () => {
-    if (stage === 0 && videoId) {
-      // If maxres fails (e.g. 404 for 360p video), try sddefault (640x480)
+    if (stage === 0 && videoId && optimizedSrc !== `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`) {
       setStage(1);
-    } else if (stage === 1 && videoId) {
-      // Try hqdefault (480x360)
+    } else if (stage < 2 && (optimizedSrc || videoId)) {
       setStage(2);
-    } else if (stage < 3 && optimizedSrc) {
-      // Try image proxy
-      setStage(3);
     } else {
-      // All stages failed -> show placeholder
-      setStage(4);
+      setStage(3);
     }
   };
 
@@ -129,9 +119,9 @@ export const ArtworkImage: React.FC<ArtworkImageProps> = ({
       ? 'aspect-16/9'
       : 'aspect-square rounded-full';
 
-  const showPlaceholder = !currentSrc || stage === 4;
+  const showPlaceholder = !currentSrc || stage === 3;
   // Never show a half-decoded image: the box holds a skeleton until the bitmap is ready.
-  const showSkeleton = Boolean(currentSrc) && !isLoaded && stage !== 4;
+  const showSkeleton = Boolean(currentSrc) && !isLoaded && stage !== 3;
 
   return (
     <div

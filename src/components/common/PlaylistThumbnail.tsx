@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { ListMusic, Play, Music } from 'lucide-react';
-import { ArtworkImage } from './ArtworkImage';
+import { ListMusic, Play, Download, ArrowDown } from 'lucide-react';
+import { ArtworkImage, upgradeArtworkUrl } from './ArtworkImage';
 
 interface PlaylistThumbnailProps {
   artworkUrl?: string;
@@ -11,6 +11,9 @@ interface PlaylistThumbnailProps {
   rounded?: string;
   onPlay?: () => void;
   showPlayButton?: boolean;
+  onDownload?: () => void;
+  isDownloaded?: boolean;
+  isDownloading?: boolean;
   showBadge?: boolean;
   size?: 'small' | 'medium' | 'large' | 'full';
 }
@@ -24,6 +27,9 @@ export const PlaylistThumbnail: React.FC<PlaylistThumbnailProps> = ({
   rounded = 'rounded-xl',
   onPlay,
   showPlayButton = true,
+  onDownload,
+  isDownloaded = false,
+  isDownloading = false,
   showBadge = true,
   size = 'medium',
 }) => {
@@ -42,10 +48,11 @@ export const PlaylistThumbnail: React.FC<PlaylistThumbnailProps> = ({
           {collageArtworks.slice(0, 4).map((art, idx) => (
             <div key={idx} className="w-full h-full relative overflow-hidden bg-neutral-800">
               <img
-                src={art}
+                src={upgradeArtworkUrl(art, 'small') || art}
                 alt=""
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                 loading="lazy"
+                decoding="async"
                 referrerPolicy="no-referrer"
               />
             </div>
@@ -77,6 +84,33 @@ export const PlaylistThumbnail: React.FC<PlaylistThumbnailProps> = ({
             {trackCount} {trackCount === 1 ? 'track' : 'tracks'}
           </span>
         </div>
+      )}
+
+      {/* Download Playlist Button (Spotify style) */}
+      {onDownload && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDownload();
+          }}
+          aria-label={`Download ${title}`}
+          title={isDownloaded ? 'Downloaded • Click to manage' : isDownloading ? 'Downloading playlist...' : `Download playlist`}
+          className={`absolute left-2.5 bottom-2.5 z-20 w-8 h-8 rounded-full flex items-center justify-center shadow-[0_4px_14px_rgba(0,0,0,0.6)] transition-all duration-300 cursor-pointer ${
+            isDownloaded
+              ? 'bg-[#1ed760] text-black shadow-[0_0_12px_rgba(30,215,96,0.4)] opacity-100 scale-100'
+              : isDownloading
+              ? 'bg-neutral-900/90 border border-emerald-500/50 text-[#1ed760] opacity-100'
+              : 'bg-black/80 hover:bg-black/95 text-neutral-300 hover:text-white border border-white/15 opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 hover:scale-105 active:scale-95'
+          }`}
+        >
+          {isDownloading ? (
+            <span className="w-4 h-4 rounded-full border-2 border-emerald-500/30 border-t-[#1ed760] animate-spin block" />
+          ) : isDownloaded ? (
+            <ArrowDown className="w-4 h-4 stroke-[2.8]" />
+          ) : (
+            <Download className="w-4 h-4" />
+          )}
+        </button>
       )}
 
       {/* Hover Play Button (YouTube Music / Spotify style) */}

@@ -5,6 +5,7 @@ import { ArtworkImage } from '../components/common/ArtworkImage';
 import { PlaylistThumbnail } from '../components/common/PlaylistThumbnail';
 import { formatTime } from '../utils/formatters';
 import { useLongPress } from '../hooks/useLongPress';
+import { useDownloads } from '../hooks/useDownloads';
 import { Play, MoreHorizontal } from 'lucide-react';
 
 interface SeeAllPageProps {
@@ -26,6 +27,44 @@ export const SeeAllPage: React.FC<SeeAllPageProps> = ({
 }) => {
   const [items, setItems] = useState<(Song | Album | Artist | Playlist)[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const downloads = useDownloads();
+  const [downloadingPlaylistId, setDownloadingPlaylistId] = useState<string | null>(null);
+
+  const handleDownloadPlaylist = async (pl: Playlist) => {
+    if (downloadingPlaylistId) return;
+    let tracks = pl.tracks || [];
+    if (tracks.length === 0) {
+      setDownloadingPlaylistId(pl.id);
+      try {
+        const fullPl = await providerManager.getActiveProvider().getPlaylist(pl.id);
+        if (fullPl?.tracks?.length) {
+          tracks = fullPl.tracks;
+        }
+      } catch (e) {
+        console.warn('Failed to load playlist for download:', e);
+      }
+      setDownloadingPlaylistId(null);
+    }
+
+    if (tracks.length === 0) return;
+
+    const allDownloaded = tracks.every((t) => downloads.isDownloaded(t.id));
+    if (allDownloaded) {
+      if (window.confirm(`Remove offline downloads for all ${tracks.length} songs in "${pl.title}"?`)) {
+        for (const t of tracks) {
+          await downloads.removeDownload(t.id);
+        }
+      }
+      return;
+    }
+
+    setDownloadingPlaylistId(pl.id);
+    const pending = tracks.filter((t) => !downloads.isDownloaded(t.id));
+    for (const song of pending) {
+      await downloads.downloadSong(song);
+    }
+    setDownloadingPlaylistId(null);
+  };
 
   const { getHandlers } = useLongPress<Song>((song) => onOpenContextMenu(song));
 
@@ -158,6 +197,8 @@ export const SeeAllPage: React.FC<SeeAllPageProps> = ({
           // Playlist
           if ('trackCount' in item && 'tracks' in item) {
             const playlist = item as Playlist;
+            const isAllDl = Boolean(playlist.tracks && playlist.tracks.length > 0 && playlist.tracks.every((t) => downloads.isDownloaded(t.id)));
+            const isDlIng = downloadingPlaylistId === playlist.id || Boolean(playlist.tracks && playlist.tracks.some((t) => downloads.isDownloading(t.id)));
             return (
               <div
                 key={playlist.id}
@@ -176,6 +217,9 @@ export const SeeAllPage: React.FC<SeeAllPageProps> = ({
                       onPlaySong(playlist.tracks[0], playlist.tracks);
                     }
                   }}
+                  onDownload={() => handleDownloadPlaylist(playlist)}
+                  isDownloaded={isAllDl}
+                  isDownloading={isDlIng}
                 />
                 <p className="text-xs font-semibold text-white truncate">{playlist.title}</p>
                 <p className="text-[11px] text-neutral-400 truncate">{playlist.trackCount} tracks</p>

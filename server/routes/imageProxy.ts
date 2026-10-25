@@ -21,11 +21,13 @@ imageProxyRouter.get('/', async (req: Request, res: Response) => {
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       return res.status(400).json({ error: 'Invalid URL protocol' });
     }
-    // Upgrade Google / YouTube content to high resolution ONLY if no size parameter is already present
+    // Upgrade Google / YouTube content to high resolution
     if (targetUrl.includes('googleusercontent.com') || targetUrl.includes('ggpht.com')) {
-      if (!targetUrl.includes('=w') && !targetUrl.includes('=s')) {
-        targetUrl = targetUrl.replace(/=w\d+-h\d+[^?&#]*/g, '=w800-h800-l90-rj');
-        targetUrl = targetUrl.replace(/=s\d+[^?&#]*/g, '=s800-c-k-c0x00ffffff-no-rj');
+      if (targetUrl.includes('=w') || targetUrl.includes('=s')) {
+        targetUrl = targetUrl.replace(/=w\d+-h\d+[^?&#]*/g, '=w544-h544-l90-rj');
+        targetUrl = targetUrl.replace(/=s\d+[^?&#]*/g, '=s544-c-k-c0x00ffffff-no-rj');
+      } else {
+        targetUrl = `${targetUrl}=w544-h544-l90-rj`;
       }
     }
     if (targetUrl.includes('i.ytimg.com')) {
@@ -59,9 +61,8 @@ imageProxyRouter.get('/', async (req: Request, res: Response) => {
       const videoIdMatch = imageUrl.match(/(?:vi\/|v=|\/)([a-zA-Z0-9_-]{11})(?:\/|\.|\?|$)/);
       if (videoIdMatch && videoIdMatch[1]) {
         const fallbacks = [
-          `https://i.ytimg.com/vi/${videoIdMatch[1]}/hq720.jpg`,
-          `https://i.ytimg.com/vi/${videoIdMatch[1]}/sddefault.jpg`,
           `https://i.ytimg.com/vi/${videoIdMatch[1]}/hqdefault.jpg`,
+          `https://i.ytimg.com/vi/${videoIdMatch[1]}/mqdefault.jpg`,
         ];
         for (const fallbackUrl of fallbacks) {
           const fbRes = await fetch(fallbackUrl);
