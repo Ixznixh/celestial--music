@@ -16,8 +16,10 @@ import {
   Check, 
   X, 
   ArrowUp, 
-  ArrowDown 
+  ArrowDown,
+  Download
 } from 'lucide-react';
+import { useDownloads } from '../hooks/useDownloads';
 
 interface PlaylistPageProps {
   playlistId: string;
@@ -48,6 +50,53 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
+
+  const {
+    isDownloaded,
+    isDownloading,
+    getProgress,
+    downloadSong,
+    removeDownload,
+  } = useDownloads();
+
+  const [isDownloadingPlaylist, setIsDownloadingPlaylist] = useState(false);
+  const [downloadStep, setDownloadStep] = useState<{ current: number; total: number } | null>(null);
+
+  const downloadedTracksCount = playlist?.tracks.filter((t) => isDownloaded(t.id)).length || 0;
+  const isAllDownloaded = Boolean(
+    playlist &&
+    playlist.tracks.length > 0 &&
+    downloadedTracksCount === playlist.tracks.length
+  );
+  const isAnyDownloading = Boolean(
+    isDownloadingPlaylist ||
+    playlist?.tracks.some((t) => isDownloading(t.id))
+  );
+
+  const handleToggleDownloadPlaylist = async () => {
+    if (!playlist || playlist.tracks.length === 0 || isAnyDownloading) return;
+
+    if (isAllDownloaded) {
+      if (window.confirm(`Remove offline downloads for all ${playlist.tracks.length} songs in "${playlist.title}"?`)) {
+        for (const t of playlist.tracks) {
+          await removeDownload(t.id);
+        }
+      }
+      return;
+    }
+
+    setIsDownloadingPlaylist(true);
+    const pending = playlist.tracks.filter((t) => !isDownloaded(t.id));
+    setDownloadStep({ current: 0, total: pending.length });
+
+    for (let i = 0; i < pending.length; i++) {
+      setDownloadStep({ current: i + 1, total: pending.length });
+      await downloadSong(pending[i]);
+    }
+
+    setIsDownloadingPlaylist(false);
+    setDownloadStep(null);
+  };
 
   const { getHandlers } = useLongPress<Song>((song) => onOpenContextMenu(song));
 
@@ -189,9 +238,9 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({
             </>
           )}
 
-          {/* Action Buttons: Play & Shuffle */}
+          {/* Action Buttons: Play, Shuffle, Download */}
           {playlist.tracks.length > 0 && (
-            <div className="flex items-center gap-3 w-full sm:w-auto mt-4 sm:mt-6">
+            <div className="flex items-center gap-3 w-full sm:w-auto mt-4 sm:mt-6 flex-wrap">
               <button
                 onClick={() => onPlayAll(playlist.tracks, false)}
                 className="flex-1 sm:flex-initial py-2.5 px-6 rounded-2xl bg-white text-black font-semibold text-sm flex items-center justify-center gap-2 hover:bg-neutral-200 active:scale-95 transition shadow-lg cursor-pointer"
@@ -207,6 +256,49 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({
                 <Shuffle className="w-4 h-4" />
                 <span>Shuffle</span>
               </button>
+
+              {/* Spotify-style Download Button */}
+              <button
+                onClick={handleToggleDownloadPlaylist}
+                disabled={isAnyDownloading && !isDownloadingPlaylist}
+                title={
+                  isAllDownloaded
+                    ? `Downloaded (${downloadedTracksCount}/${playlist.tracks.length}) • Click to remove`
+                    : isAnyDownloading
+                    ? `Downloading ${downloadStep ? `${downloadStep.current}/${downloadStep.total}` : '...'}`
+                    : `Download playlist for offline listening`
+                }
+                className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-md select-none shrink-0 ${
+                  isAllDownloaded
+                    ? 'bg-[#1ed760] text-black shadow-[0_0_14px_rgba(30,215,96,0.4)] hover:bg-[#1fdf64] hover:scale-105 active:scale-95'
+                    : isAnyDownloading
+                    ? 'bg-neutral-800/90 border border-emerald-500/50 text-[#1ed760]'
+                    : 'bg-neutral-800/90 hover:bg-neutral-700/90 text-neutral-300 hover:text-white border border-white/10 hover:border-white/30 hover:scale-105 active:scale-95'
+                }`}
+              >
+                {isAnyDownloading ? (
+                  <div className="relative w-5 h-5 flex items-center justify-center">
+                    <span className="w-5 h-5 rounded-full border-2 border-emerald-500/30 border-t-[#1ed760] animate-spin block" />
+                  </div>
+                ) : isAllDownloaded ? (
+                  <ArrowDown className="w-5 h-5 stroke-[2.8]" />
+                ) : (
+                  <Download className="w-4.5 h-4.5" />
+                )}
+              </button>
+
+              {/* Download status counter label when in progress or downloaded */}
+              {isAnyDownloading && downloadStep && (
+                <span className="text-xs font-medium text-emerald-400 flex items-center gap-1.5 animate-pulse">
+                  <span>Downloading {downloadStep.current}/{downloadStep.total}...</span>
+                </span>
+              )}
+              {!isAnyDownloading && isAllDownloaded && (
+                <span className="text-xs font-semibold text-emerald-400/90 hidden sm:inline-flex items-center gap-1">
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Downloaded</span>
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -247,12 +339,55 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({
                     className="w-11 h-11 rounded-lg shrink-0 shadow-sm"
                   />
                   <div className="min-w-0 flex-1 pr-2">
-                    <p className="text-sm font-semibold text-white truncate">{song.title}</p>
+                    <div className="flex items-center gap-1.5">
+                      {isDownloaded(song.id) && (
+                        <span
+                          className="w-3.5 h-3.5 rounded-full bg-[#1ed760] text-black flex items-center justify-center shrink-0 shadow-sm"
+                          title="Downloaded"
+                        >
+                          <ArrowDown className="w-2.5 h-2.5 stroke-[3]" />
+                        </span>
+                      )}
+                      {isDownloading(song.id) && (
+                        <span
+                          className="w-3.5 h-3.5 rounded-full border border-emerald-400 border-t-transparent animate-spin shrink-0"
+                          title={`Downloading ${getProgress(song.id)}%`}
+                        />
+                      )}
+                      <p className="text-sm font-semibold text-white truncate">{song.title}</p>
+                    </div>
                     <p className="text-xs text-neutral-400 truncate mt-0.5">{song.artist}</p>
                   </div>
                 </button>
 
                 <div className="flex items-center gap-1 shrink-0">
+                  {/* Single song download action */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isDownloaded(song.id)) {
+                        removeDownload(song.id);
+                      } else {
+                        downloadSong(song);
+                      }
+                    }}
+                    title={isDownloaded(song.id) ? 'Downloaded • Click to remove' : 'Download track'}
+                    className={`p-1.5 rounded-full transition cursor-pointer ${
+                      isDownloaded(song.id)
+                        ? 'text-[#1ed760] hover:text-emerald-300'
+                        : isDownloading(song.id)
+                        ? 'text-emerald-400'
+                        : 'text-neutral-500 hover:text-white hover:bg-neutral-700/60 opacity-0 group-hover:opacity-100'
+                    }`}
+                  >
+                    {isDownloaded(song.id) ? (
+                      <ArrowDown className="w-4 h-4 stroke-[2.5]" />
+                    ) : isDownloading(song.id) ? (
+                      <span className="w-4 h-4 rounded-full border border-emerald-400 border-t-transparent animate-spin block" />
+                    ) : (
+                      <Download className="w-4 h-4" />
+                    )}
+                  </button>
                   <span className="text-xs text-neutral-500 tabular-nums mr-1">
                     {formatTime(song.duration)}
                   </span>
