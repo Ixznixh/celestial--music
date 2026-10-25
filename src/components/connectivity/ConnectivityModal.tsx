@@ -87,10 +87,6 @@ export const ConnectivityModal: React.FC<ConnectivityModalProps> = ({
   const [isConnectingCookie, setIsConnectingCookie] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
 
-  // Spotify inputs
-  const [spotifyUrlInput, setSpotifyUrlInput] = useState('');
-  const [isImportingSpotify, setIsImportingSpotify] = useState(false);
-
   // Discord inputs
   const [discordWebhookInput, setDiscordWebhookInput] = useState(state.discord.webhookUrl || '');
   const [isTestingDiscord, setIsTestingDiscord] = useState(false);
@@ -292,62 +288,6 @@ export const ConnectivityModal: React.FC<ConnectivityModalProps> = ({
     showToast('Code copied to clipboard!');
   };
 
-  // Spotify integration
-  const handleSpotifyConnect = () => {
-    // Open Spotify OAuth or initiate in-app simulation
-    const width = 500;
-    const height = 700;
-    const left = window.screenX + (window.outerWidth - width) / 2;
-    const top = window.screenY + (window.outerHeight - height) / 2;
-    window.open('/api/spotify/auth', 'Spotify Login', `width=${width},height=${height},left=${left},top=${top}`);
-
-    // Update state to connected
-    saveConnectivityState({
-      spotify: {
-        ...state.spotify,
-        connected: true,
-        username: 'Spotify Listener',
-        lastSynced: Date.now(),
-      },
-    });
-    showToast('Spotify integration linked! Ready to stream & sync.');
-  };
-
-  const handleImportSpotifyUrl = async () => {
-    if (!spotifyUrlInput.trim()) return;
-    setIsImportingSpotify(true);
-    try {
-      const res = await fetch(`/api/spotify/playlist/import`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: spotifyUrlInput.trim() }),
-      });
-      const data = await res.json();
-      if (res.ok && data.playlist) {
-        if (onImportPlaylist) {
-          await onImportPlaylist(data.playlist);
-        }
-        saveConnectivityState({
-          spotify: {
-            ...state.spotify,
-            connected: true,
-            playlistsCount: (state.spotify.playlistsCount || 0) + 1,
-            likedSongsCount: (state.spotify.likedSongsCount || 0) + (data.tracks?.length || 0),
-          },
-        });
-        showToast(`Imported "${data.playlist.title}" (${data.tracks?.length || 0} tracks) from Spotify!`);
-        setSpotifyUrlInput('');
-      } else {
-        showToast(data.error || 'Could not import Spotify playlist URL.');
-      }
-    } catch (e: any) {
-      showToast('Spotify link import complete! Tracks added to library.');
-      setSpotifyUrlInput('');
-    } finally {
-      setIsImportingSpotify(false);
-    }
-  };
-
   // Discord Rich Presence test
   const handleTestDiscord = () => {
     setIsTestingDiscord(true);
@@ -466,7 +406,7 @@ export const ConnectivityModal: React.FC<ConnectivityModalProps> = ({
                     </span>
                   </h2>
                   <p className="text-xs text-neutral-400 truncate">
-                    Google, Spotify, Discord Rich Presence, Scrobbling & Pluggable Sources
+                    Google & YouTube Music, Discord Rich Presence, Scrobbling & Pluggable Sources
                   </p>
                 </div>
               </div>
@@ -497,7 +437,7 @@ export const ConnectivityModal: React.FC<ConnectivityModalProps> = ({
             <div className="flex items-center border-b border-white/10 px-5 py-2.5 bg-black/40 gap-1.5 overflow-x-auto no-scrollbar shrink-0 text-xs font-semibold select-none">
               {[
                 { id: 'all', label: 'All Modules' },
-                { id: 'accounts', label: 'Google & Spotify' },
+                { id: 'accounts', label: 'YouTube Music' },
                 { id: 'discord', label: 'Discord Presence' },
                 { id: 'scrobble', label: 'Last.fm & Scrobblers' },
                 { id: 'sources', label: 'Pluggable Sources' },
@@ -749,66 +689,6 @@ export const ConnectivityModal: React.FC<ConnectivityModalProps> = ({
                       )}
                     </div>
                   )}
-                </section>
-              )}
-
-              {/* 2. SPOTIFY INTEGRATION */}
-              {(activeTab === 'all' || activeTab === 'accounts') && (
-                <section className="bg-white/[0.03] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-[#1DB954]/20 border border-[#1DB954]/40 flex items-center justify-center text-[#1DB954] shrink-0 shadow-md">
-                        <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                          <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.498 17.306c-.216.353-.674.467-1.027.252-2.815-1.72-6.358-2.109-10.533-1.155-.403.092-.803-.16-.895-.563-.092-.403.16-.803.563-.895 4.57-1.045 8.492-.601 11.64 1.334.353.216.467.674.252 1.027zm1.467-3.26c-.272.443-.849.585-1.292.313-3.223-1.981-8.136-2.553-11.948-1.396-.5.152-1.031-.133-1.183-.633-.152-.5.133-1.031.633-1.183 4.358-1.323 9.776-.684 13.477 1.591.443.272.585.849.313 1.292zm.126-3.41c-3.864-2.294-10.245-2.506-13.935-1.385-.593.18-1.222-.158-1.402-.751-.18-.593.158-1.222.751-1.402 4.24-1.287 11.285-1.038 15.727 1.598.533.316.708 1.008.392 1.541-.316.533-1.008.708-1.533.399z" />
-                        </svg>
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                          <span>Spotify Integration</span>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                            state.spotify.connected ? 'bg-[#1DB954]/20 text-[#1DB954] border border-[#1DB954]/30' : 'bg-neutral-800 text-neutral-400'
-                          }`}>
-                            {state.spotify.connected ? 'Connected' : 'Ready'}
-                          </span>
-                        </h3>
-                        <p className="text-xs text-neutral-400 mt-0.5">
-                          Connect your account to play your playlists and Liked Songs.
-                        </p>
-                      </div>
-                    </div>
-
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={handleSpotifyConnect}
-                      className="px-3 py-1.5 rounded-xl bg-[#1DB954] hover:bg-[#1ed760] text-black font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer shrink-0"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>{state.spotify.connected ? 'Reconnect' : 'Connect Spotify'}</span>
-                    </motion.button>
-                  </div>
-
-                  {/* Spotify URL import */}
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
-                    <input
-                      type="text"
-                      value={spotifyUrlInput}
-                      onChange={(e) => setSpotifyUrlInput(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleImportSpotifyUrl()}
-                      placeholder="Paste Spotify playlist or album link to sync..."
-                      className="flex-1 bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-[#1DB954] transition"
-                    />
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={handleImportSpotifyUrl}
-                      disabled={isImportingSpotify || !spotifyUrlInput.trim()}
-                      className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-40 shrink-0"
-                    >
-                      {isImportingSpotify ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-                      <span>Sync Link</span>
-                    </motion.button>
-                  </div>
                 </section>
               )}
 
