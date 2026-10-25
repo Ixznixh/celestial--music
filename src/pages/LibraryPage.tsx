@@ -243,6 +243,36 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
               <p className="text-[11px] text-neutral-400 truncate">{favoriteSongs.length} tracks</p>
             </div>
 
+            {/* Downloaded Songs Playlist Card */}
+            {downloads.downloadCount > 0 && (
+              <div
+                onClick={() => setTab('songs')}
+                className="p-2.5 rounded-2xl bg-neutral-900/80 hover:bg-neutral-850 border border-neutral-800/80 cursor-pointer active:scale-95 transition relative group"
+              >
+                <div className="w-full aspect-square rounded-xl shadow-md mb-2 bg-gradient-to-br from-emerald-700 via-emerald-600 to-emerald-500 flex flex-col items-center justify-center relative overflow-hidden group-hover:shadow-lg transition">
+                  <HardDrive className="w-12 h-12 text-emerald-200 drop-shadow-md" />
+                  {downloads.downloadCount > 0 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onPlaySong(
+                          downloads.downloadedTracks[0].song,
+                          downloads.downloadedTracks.map((track) => track.song)
+                        );
+                      }}
+                      className="absolute right-3 bottom-3 w-10 h-10 rounded-full bg-emerald-300 hover:bg-emerald-200 text-white flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-all transform scale-90 group-hover:scale-100 cursor-pointer"
+                      title="Play Downloaded Songs"
+                    >
+                      <Play className="w-5 h-5 fill-white ml-0.5" />
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs font-semibold text-white truncate">Downloaded Songs</p>
+                <p className="text-[11px] text-neutral-400 truncate">{downloads.downloadCount} tracks</p>
+              </div>
+            )}
+            )
+
             {playlists.map((pl) => (
               <div
                 key={pl.id}

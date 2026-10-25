@@ -1658,6 +1658,13 @@ export class AudioPlayer {
   public async playNextTrack(): Promise<void> {
     const nextSong = this.queueManager.next();
     if (nextSong) {
+      // Check if the next song is downloaded and has a local audio URL
+      const localUrl = this.localAudioUrls.get(nextSong.id);
+      if (localUrl) {
+        // Song is downloaded - start playback from local cache
+        await this.startPlayback(nextSong, 0);
+        return;
+      }
       // Hot path: the next track is already known and its stream URL is usually pre-resolved,
       // so startPlayback() swaps the src and calls play() synchronously.
       await this.startPlayback(nextSong, 0);
@@ -1703,10 +1710,17 @@ export class AudioPlayer {
   public async playPreviousTrack(): Promise<void> {
     const prevSong = this.queueManager.previous();
     if (prevSong) {
+      // Check if the previous song is downloaded and has a local audio URL
+      const localUrl = this.localAudioUrls.get(prevSong.id);
+      if (localUrl) {
+        // Song is downloaded - start playback from local cache
+        await this.startPlayback(prevSong, 0);
+        return;
+      }
+      // Fall back to normal playback
       await this.startPlayback(prevSong, 0);
-    } else {
-      // If there is no previous track, safely do nothing
     }
+    // If there is no previous track, safely do nothing
   }
 
   public async next(): Promise<void> {
