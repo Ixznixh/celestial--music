@@ -67,6 +67,21 @@ export function normalizeSongKey(song: {
 
 const UNKNOWN_NAMES = new Set(['', 'unknown', 'unknown artist', 'various artists', 'va']);
 
+/** Checks if a song's title/artist metadata is genuinely unknown/blank. */
+export function isUnknownTrack(song: Song): boolean {
+  if (!song) return true;
+  const title = (song.title || '').trim();
+  const artist = (song.artist || song.artists || '').trim();
+  // Title or artist is blank/missing entirely
+  if (!title && !artist) return true;
+  // Title or artist matches known "unknown" patterns (case-insensitive)
+  if (UNKNOWN_NAMES.has(title.toLowerCase()) || UNKNOWN_NAMES.has(artist.toLowerCase())) return true;
+  // Very short or generic fallback names
+  if (title.length <= 1 && !/^[a-z0-9]$/i.test(title)) return true;
+  if (artist.length <= 1 && !/^[a-z0-9]$/i.test(artist)) return true;
+  return false;
+}
+
 function isUsableName(name: string): boolean {
   return name.length >= 2 && name.length <= 60 && !UNKNOWN_NAMES.has(name.toLowerCase());
 }

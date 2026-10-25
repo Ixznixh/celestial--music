@@ -5,7 +5,7 @@ import { usePlayer } from '../hooks/usePlayer';
 import { useLongPress } from '../hooks/useLongPress';
 import { ArtworkImage } from '../components/common/ArtworkImage';
 import { isDemoItem } from '../services/indexedDB';
-import { emptyTasteProfile, loadTasteProfile, TasteProfile } from '../services/tasteProfile';
+import { isUnknownTrack, emptyTasteProfile, loadTasteProfile, TasteProfile } from '../services/tasteProfile';
 import { composeHomeFeed } from '../services/homeFeed';
 import { ensureAccountScopeReady, onAccountScopeChange } from '../services/accountScope';
 import { User } from 'firebase/auth';
@@ -68,10 +68,20 @@ function readCachedFeed(): HomeSection[] {
           const seenItemKeys = new Set<string>();
           const dedupedItems = (sec.items || []).filter((item) => {
             if (isDemoItem(item)) return false;
-            const itemTitle =
-              ('title' in item ? item.title : ('name' in item ? (item as any).name : '')) || '';
-            const itemArtist = ('artist' in item ? (item as any).artist : '') || '';
-            const itemKey = `${itemTitle.trim().toLowerCase()}:::${itemArtist.trim().toLowerCase()}`;
+            // Also filter out items with unknown/blank metadata (title/artist)
+            const title = ('title' in item ? item.title : '') || '';
+            const artist = ('artist' in item ? item.artist : '') || '';
+            const titleTrim = title.trim();
+            const artistTrim = artist.trim();
+            // Title or artist is blank/missing entirely
+            if (!titleTrim && !artistTrim) return false;
+            // Known "unknown" patterns (case-insensitive)
+            const UNKNOWN_NAMES = new Set(['', 'unknown', 'unknown artist', 'various artists', 'va']);
+            if (UNKNOWN_NAMES.has(titleTrim.toLowerCase()) || UNKNOWN_NAMES.has(artistTrim.toLowerCase())) return false;
+            // Very short or generic fallback names
+            if (titleTrim.length <= 1 && !/^[a-z0-9]$/i.test(titleTrim)) return false;
+            if (artistTrim.length <= 1 && !/^[a-z0-9]$/i.test(artistTrim)) return false;
+            const itemKey = `${titleTrim.trim().toLowerCase()}:::${artistTrim.trim().toLowerCase()}`;
             if (seenItemKeys.has(itemKey) || seenItemKeys.has(item.id)) return false;
             seenItemKeys.add(itemKey);
             seenItemKeys.add(item.id);
@@ -101,7 +111,7 @@ export const HomePage: React.FC<HomePageProps> = ({
 }) => {
   const player = usePlayer();
 
-  const cleanFavorites = favoriteSongs.filter((s) => !isDemoItem(s));
+  const cleanFavorites = favoriteSongs.filter((s) => !isDemoItem(s) && !isUnknownTrack(s));
 
   const [sections, setSections] = useState<HomeSection[]>([]);
 
@@ -165,9 +175,20 @@ export const HomePage: React.FC<HomePageProps> = ({
           const seenItemKeys = new Set<string>();
           const dedupedItems = (sec.items || []).filter((item) => {
             if (isDemoItem(item)) return false;
-            const itemTitle = ('title' in item ? item.title : ('name' in item ? (item as any).name : '')) || '';
-            const itemArtist = ('artist' in item ? (item as any).artist : '') || '';
-            const itemKey = `${itemTitle.trim().toLowerCase()}:::${itemArtist.trim().toLowerCase()}`;
+            // Also filter out items with unknown/blank metadata (title/artist)
+            const title = ('title' in item ? item.title : '') || '';
+            const artist = ('artist' in item ? item.artist : '') || '';
+            const titleTrim = title.trim();
+            const artistTrim = artist.trim();
+            // Title or artist is blank/missing entirely
+            if (!titleTrim && !artistTrim) return false;
+            // Known "unknown" patterns (case-insensitive)
+            const UNKNOWN_NAMES = new Set(['', 'unknown', 'unknown artist', 'various artists', 'va']);
+            if (UNKNOWN_NAMES.has(titleTrim.toLowerCase()) || UNKNOWN_NAMES.has(artistTrim.toLowerCase())) return false;
+            // Very short or generic fallback names
+            if (titleTrim.length <= 1 && !/^[a-z0-9]$/i.test(titleTrim)) return false;
+            if (artistTrim.length <= 1 && !/^[a-z0-9]$/i.test(artistTrim)) return false;
+            const itemKey = `${titleTrim.trim().toLowerCase()}:::${artistTrim.trim().toLowerCase()}`;
             if (seenItemKeys.has(itemKey) || seenItemKeys.has(item.id)) return false;
             seenItemKeys.add(itemKey);
             seenItemKeys.add(item.id);
@@ -302,7 +323,23 @@ export const HomePage: React.FC<HomePageProps> = ({
 
   // Group quick picks into 4-song chunks for YouTube Music style swipeable columns
   const quickPicksSongs = (quickPicksSection?.items || []).filter(
-    (i) => 'duration' in i && 'streamUrl' in i
+    (i) => {
+      if (!('duration' in i && 'streamUrl' in i)) return false;
+      // Also filter out items with unknown/blank metadata (title/artist)
+      const title = ('title' in i ? i.title : '') || '';
+      const artist = ('artist' in i ? i.artist : '') || '';
+      const titleTrim = title.trim();
+      const artistTrim = artist.trim();
+      // Title or artist is blank/missing entirely
+      if (!titleTrim && !artistTrim) return false;
+      // Known "unknown" patterns (case-insensitive)
+      const UNKNOWN_NAMES = new Set(['', 'unknown', 'unknown artist', 'various artists', 'va']);
+      if (UNKNOWN_NAMES.has(titleTrim.toLowerCase()) || UNKNOWN_NAMES.has(artistTrim.toLowerCase())) return false;
+      // Very short or generic fallback names
+      if (titleTrim.length <= 1 && !/^[a-z0-9]$/i.test(titleTrim)) return false;
+      if (artistTrim.length <= 1 && !/^[a-z0-9]$/i.test(artistTrim)) return false;
+      return true;
+    }
   ) as Song[];
 
   const quickPicksColumns: Song[][] = [];
@@ -575,7 +612,24 @@ export const HomePage: React.FC<HomePageProps> = ({
       {/* 4. Dynamic YouTube Music Tamil Shelves */}
       {Array.isArray(otherSections) && otherSections.map((section) => {
         const sectionSongs = section.items.filter(
-          (i) => 'duration' in i && 'streamUrl' in i && !isDemoItem(i)
+          (i) => {
+            // Filter to only song items with duration and streamUrl
+            if (!('duration' in i && 'streamUrl' in i)) return false;
+            // Also filter out items with unknown/blank metadata (title/artist)
+            const title = ('title' in i ? i.title : '') || '';
+            const artist = ('artist' in i ? i.artist : '') || '';
+            const titleTrim = title.trim();
+            const artistTrim = artist.trim();
+            // Title or artist is blank/missing entirely
+            if (!titleTrim && !artistTrim) return false;
+            // Known "unknown" patterns (case-insensitive)
+            const UNKNOWN_NAMES = new Set(['', 'unknown', 'unknown artist', 'various artists', 'va']);
+            if (UNKNOWN_NAMES.has(titleTrim.toLowerCase()) || UNKNOWN_NAMES.has(artistTrim.toLowerCase())) return false;
+            // Very short or generic fallback names
+            if (titleTrim.length <= 1 && !/^[a-z0-9]$/i.test(titleTrim)) return false;
+            if (artistTrim.length <= 1 && !/^[a-z0-9]$/i.test(artistTrim)) return false;
+            return true;
+          }
         ) as Song[];
 
         return (
