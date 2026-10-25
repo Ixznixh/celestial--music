@@ -1004,6 +1004,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       />
                     </div>
 
+                    {/* Spotify import */}
+                    <div className="p-3.5 flex items-center justify-between" id="spotify-import-section">
+                      <div className="flex items-center gap-3">
+                        <Disc3 className="w-4.5 h-4.5 text-neutral-400" />
+                        <div>
+                          <p className="text-sm font-medium text-white" id="spotify-status-text">Connect to Spotify</p>
+                          <p className="text-xs text-neutral-400" id="spotify-subtext">Import playlists and connect accounts</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => window.open('/api/spotify/auth', '_blank')}
+                        className="px-2.5 py-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-medium shrink-0 transition text-[11px]"
+                        aria-label="Connect to Spotify"
+                      >
+                        Connect
+                      </button>
+                    </div>
+
                     {/* Export data */}
                     <button
                       onClick={handleExportData}
