@@ -30,6 +30,8 @@ import { TrackContextMenu } from './components/common/TrackContextMenu';
 import { AddToPlaylistModal } from './components/common/AddToPlaylistModal';
 import { NewPlaylistModal } from './components/common/NewPlaylistModal';
 import { SpotifyImportModal } from './components/settings/SpotifyImportModal';
+import { ConnectivityModal } from './components/connectivity/ConnectivityModal';
+import { recordScrobble } from './services/connectivity';
 import { ensureAccountScopeReady, onAccountScopeChange } from './services/accountScope';
 
 export function App() {
@@ -47,6 +49,7 @@ export function App() {
   const [isNewPlaylistOpen, setIsNewPlaylistOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [isSpotifyImportOpen, setIsSpotifyImportOpen] = useState(false);
+  const [isConnectivityOpen, setIsConnectivityOpen] = useState(false);
 
   useEffect(() => {
     // Check if user came with ?spotify_import=1 or #spotify-import
@@ -60,8 +63,13 @@ export function App() {
     } catch {}
 
     const handleOpenSpotify = () => setIsSpotifyImportOpen(true);
+    const handleOpenConnectivity = () => setIsConnectivityOpen(true);
     window.addEventListener('celestial-open-spotify-import', handleOpenSpotify);
-    return () => window.removeEventListener('celestial-open-spotify-import', handleOpenSpotify);
+    window.addEventListener('celestial-open-connectivity', handleOpenConnectivity);
+    return () => {
+      window.removeEventListener('celestial-open-spotify-import', handleOpenSpotify);
+      window.removeEventListener('celestial-open-connectivity', handleOpenConnectivity);
+    };
   }, []);
 
   // Settings with all YouTube Music options
@@ -133,6 +141,22 @@ export function App() {
   const player = usePlayer();
   const library = useLibrary();
   const downloads = useDownloads();
+
+  // Scrobble listener (triggers when track reaches 50% duration or 4 minutes)
+  const scrobbledSongIdRef = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (!player.currentSong) {
+      scrobbledSongIdRef.current = null;
+      return;
+    }
+    if (scrobbledSongIdRef.current === player.currentSong.id) return;
+
+    const duration = player.duration || (player.currentSong.duration ? Number(player.currentSong.duration) : 0);
+    if (duration > 10 && player.currentTime >= Math.min(duration * 0.5, 240)) {
+      scrobbledSongIdRef.current = player.currentSong.id;
+      recordScrobble(player.currentSong);
+    }
+  }, [player.currentSong, player.currentTime, player.duration]);
 
   // Helper to determine relative index of view
   const getViewRank = (view: AppView) => {
@@ -361,6 +385,7 @@ export function App() {
         currentView={currentView}
         onNavigateBack={navigateBack}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenConnectivity={() => setIsConnectivityOpen(true)}
         onNavigate={navigateTo}
         title={getViewTitle()}
         lowPowerMode={settings.lowPowerMode}
@@ -588,6 +613,10 @@ export function App() {
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+        onOpenConnectivity={() => {
+          setIsSettingsOpen(false);
+          setIsConnectivityOpen(true);
+        }}
         settings={settings}
         onUpdateSettings={updateSettings}
         onClearRecentlyPlayed={library.clearRecentlyPlayed}
@@ -598,6 +627,17 @@ export function App() {
             setIsSettingsOpen(false);
           }
         }}
+      />
+
+      {/* Connectivity & Accounts Hub Modal */}
+      <ConnectivityModal
+        isOpen={isConnectivityOpen}
+        onClose={() => setIsConnectivityOpen(false)}
+        currentSong={player.currentSong}
+        isPlaying={player.isPlaying}
+        currentTime={player.currentTime}
+        duration={player.duration}
+        onImportPlaylist={library.importPlaylist}
       />
 
 

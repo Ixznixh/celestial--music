@@ -56,6 +56,7 @@ interface SettingsModalProps {
   onUpdateSettings: (newSettings: Partial<AppSettings>) => void;
   onClearRecentlyPlayed: () => void;
   onResetLibrary: () => void;
+  onOpenConnectivity?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -65,6 +66,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdateSettings,
   onClearRecentlyPlayed,
   onResetLibrary,
+  onOpenConnectivity,
 }) => {
   const [isEqualizerOpen, setIsEqualizerOpen] = useState(false);
   const [isSourcesOpen, setIsSourcesOpen] = useState(false);
@@ -320,6 +322,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         onChange={(val) => onUpdateSettings({ exportCompatibleDownloads: val })}
                       />
                     </div>
+                  </div>
+                </div>
+
+                {/* CONNECTIVITY & ACCOUNTS */}
+                <div>
+                  <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider block mb-2 px-1">
+                    Connectivity & Accounts
+                  </span>
+                  <div className="bg-white/[0.03] rounded-2xl border border-white/10 divide-y divide-white/10 overflow-hidden shadow-sm">
+                    {onOpenConnectivity && (
+                      <div
+                        onClick={onOpenConnectivity}
+                        className="p-3.5 flex items-center justify-between hover:bg-white/5 transition cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.25)] shrink-0">
+                            <Radio className="w-4.5 h-4.5 animate-pulse" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-medium text-white group-hover:text-cyan-400 transition">
+                                Connectivity & Accounts
+                              </p>
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                                HUB
+                              </span>
+                            </div>
+                            <p className="text-xs text-neutral-400">Google, Spotify, Discord Rich Presence, Scrobbling & Pluggable Sources</p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-white transition" />
+                      </div>
+                    )}
                   </div>
                 </div>
 

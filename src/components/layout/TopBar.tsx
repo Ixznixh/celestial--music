@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { ChevronLeft, Sliders, Home, Search, Library, Zap } from 'lucide-react';
+import { ChevronLeft, Sliders, Home, Search, Library, Zap, Radio } from 'lucide-react';
 import { AppView } from '../../types';
 import { PWAInstallButton } from '../common/PWAInstallButton';
 
@@ -8,7 +8,7 @@ interface TopBarProps {
   currentView: AppView;
   onNavigateBack: () => void;
   onOpenSettings: () => void;
-  onOpenAccountModal?: () => void;
+  onOpenConnectivity?: () => void;
   onNavigate?: (view: AppView) => void;
   title?: string;
   lowPowerMode?: boolean;
@@ -18,6 +18,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   currentView,
   onNavigateBack,
   onOpenSettings,
+  onOpenConnectivity,
   onNavigate,
   title,
   lowPowerMode = false,
@@ -147,6 +148,20 @@ export const TopBar: React.FC<TopBarProps> = ({
             >
               <Zap className="w-3.5 h-3.5 fill-amber-300 text-amber-300" />
               <span className="hidden sm:inline">Low Power</span>
+            </motion.button>
+          )}
+
+          {onOpenConnectivity && (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={onOpenConnectivity}
+              title="Connectivity & Accounts Hub"
+              aria-label="Open Connectivity Hub"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-white/10 hover:bg-white/15 border border-white/15 text-white transition cursor-pointer shadow-sm"
+            >
+              <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+              <span className="hidden sm:inline">Connectivity</span>
             </motion.button>
           )}
 
