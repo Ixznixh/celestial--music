@@ -15,7 +15,7 @@ export default defineConfig(() => {
         manifest: {
           id: '/',
           name: 'Celestial Music',
-          short_name: 'Celestial',
+          short_name: 'Celestial Music',
           description: 'A mobile-first ad-free music streaming app with an Apple-inspired visual design.',
           theme_color: '#0a0a0c',
           background_color: '#0a0a0c',
