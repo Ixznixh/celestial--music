@@ -93,6 +93,7 @@ export class AudioPlayer {
   private preparingTrackIds = new Set<string>();
   private warmedStreamUrl: string | null = null;
   private prepareTimer: number | null = null;
+  private lastPreviousClickTime = 0;
 
   private state: PlaybackState = {
     currentSong: null,
@@ -1707,10 +1708,27 @@ export class AudioPlayer {
   }
 
   /**
-   * Plays the previous track from history.
-   * Centralized method used by both in-app controls and MediaSession lock-screen controls.
+   * Plays the previous track or restarts the current song from the beginning.
+   * - Single click: Restarts the current song from 0:00 (keeps playing).
+   * - Double click (within 1.5s): Navigates to the previous track from history.
+   * Centralized method used by in-app controls and MediaSession lock-screen controls.
    */
   public async playPreviousTrack(): Promise<void> {
+    const now = Date.now();
+    const isDoubleClick = (now - this.lastPreviousClickTime) <= 1500;
+    this.lastPreviousClickTime = now;
+
+    if (!isDoubleClick) {
+      // Single click: restart current track from beginning
+      this.seek(0);
+      if (!this.state.isPlaying) {
+        await this.play();
+      }
+      return;
+    }
+
+    // Double click: navigate to previous track from history
+    this.lastPreviousClickTime = 0; // Reset after double click
     const prevSong = this.queueManager.previous();
     if (prevSong) {
       // Check if the previous song is downloaded and has a local audio URL
@@ -1722,8 +1740,13 @@ export class AudioPlayer {
       }
       // Fall back to normal playback
       await this.startPlayback(prevSong, 0);
+    } else {
+      // If there is no previous track in history, replay from beginning
+      this.seek(0);
+      if (!this.state.isPlaying) {
+        await this.play();
+      }
     }
-    // If there is no previous track, safely do nothing
   }
 
   public async next(): Promise<void> {

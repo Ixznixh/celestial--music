@@ -70,4 +70,19 @@ describe('QueueManager — Shuffle & Reshuffle Features', () => {
     expect(success).toBe(true);
     expect(queueManager.getContextQueue().length).toBe(5);
   });
+
+  it('navigates to previous track from history', () => {
+    queueManager.setQueue(songs, 0);
+    expect(queueManager.getCurrentSong()?.id).toBe('1');
+    
+    // Advance to next song ('2')
+    const nextSong = queueManager.next();
+    expect(nextSong?.id).toBe('2');
+    expect(queueManager.getCurrentSong()?.id).toBe('2');
+
+    // Previous song should return '1'
+    const prevSong = queueManager.previous();
+    expect(prevSong?.id).toBe('1');
+    expect(queueManager.getCurrentSong()?.id).toBe('1');
+  });
 });
