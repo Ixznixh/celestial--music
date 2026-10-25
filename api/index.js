@@ -50,12 +50,8 @@ function getBestThumbnail(thumbnails, fallback = "https://images.unsplash.com/ph
   if (!url) return fallback;
   if (url.startsWith("//")) url = `https:${url}`;
   if (url.includes("googleusercontent.com") || url.includes("ggpht.com")) {
-    if (url.includes("=w") || url.includes("=s")) {
-      url = url.replace(/=w\d+-h\d+[^?&#]*/g, "=w544-h544-l90-rj");
-      url = url.replace(/=s\d+[^?&#]*/g, "=s544-c-k-c0x00ffffff-no-rj");
-    } else {
-      url = `${url}=w544-h544-l90-rj`;
-    }
+    url = url.replace(/=w\d+-h\d+[^?&#]*/g, "=w800-h800-l90-rj");
+    url = url.replace(/=s\d+[^?&#]*/g, "=s800-c-k-c0x00ffffff-no-rj");
   }
   if (url.includes("i.ytimg.com")) {
     url = url.replace(/[?&]sqp=[^&#]*/g, "").replace(/[?&]rs=[^&#]*/g, "");
@@ -63,8 +59,8 @@ function getBestThumbnail(thumbnails, fallback = "https://images.unsplash.com/ph
     const vMatch = url.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//);
     if (vMatch && vMatch[1]) {
       const vidId = vMatch[1];
-      if (url.includes("/default.jpg")) {
-        url = `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`;
+      if (url.includes("/default.jpg") || url.includes("/mqdefault.jpg") || url.includes("/hqdefault.jpg")) {
+        url = `https://i.ytimg.com/vi/${vidId}/hq720.jpg`;
       }
     }
   }
@@ -720,47 +716,11 @@ import { Innertube, Parser, Log } from "youtubei.js";
 function isPlayableSongEntry(song) {
   if (!song) return false;
   const title = String(song.title || "").trim();
-  if (!title || title.toLowerCase() === "unknown track") return false;
-  if (typeof song.duration === "number" && song.duration > 0) {
-    if (song.duration < MIN_SONG_DURATION_SECONDS || song.duration > MAX_SONG_DURATION_SECONDS) {
-      return false;
-    }
-  }
-  if (/^(jukebox|music|songs|playlist|full album|mixtape|mashup|all songs|audio jukebox|video jukebox)$/i.test(title)) {
-    return false;
-  }
-  if (/\b(music|songs|jukebox|playlist|full album|mixtape|mashup)\s*$/i.test(title)) {
-    return false;
-  }
-  for (const pattern of COMPILATION_PATTERNS) {
-    if (pattern.test(title)) {
-      if (/\bjukebox\b/i.test(pattern.source) && /\bjukebox\s+(?:hero|joints)\b/i.test(title)) {
-        continue;
-      }
-      return false;
-    }
-  }
-  const album = String(song.album || "").trim();
-  if (album) {
-    for (const pattern of COMPILATION_PATTERNS) {
-      if (pattern.test(album)) {
-        if (/\bjukebox\b/i.test(pattern.source) && /\bjukebox\s+(?:hero|joints)\b/i.test(album)) {
-          continue;
-        }
-        return false;
-      }
-    }
-  }
-  if (/\b(?:the\s+)?best\s+of\b/i.test(title) && !/\b(?:the\s+)?best\s+of\s+(?:me|you|us|both|my|mine|times|life|luck|it)\b/i.test(title)) {
-    return false;
-  }
-  const artist = String(song.artist || "").trim();
-  if (artist && /\b(jukebox|compilation|records\s*compilation|non[- ]?stop)\b/i.test(artist)) {
-    return false;
-  }
-  if (/\b(music|songs|tv)\s*$/i.test(artist)) {
-    return false;
-  }
+  if (!title) return false;
+  if (song.duration && song.duration > MAX_SONG_DURATION_SECONDS) return false;
+  if (/^(jukebox|music|songs|playlist|full album|mixtape|mashup)$/i.test(title)) return false;
+  if (/\b(music|songs|jukebox|playlist|full album|mixtape|mashup)\s*$/i.test(title)) return false;
+  if (/\b(music|songs|tv)\s*$/i.test(String(song.artist || "").trim())) return false;
   return true;
 }
 function applyAudioQuality(stream, quality) {
@@ -1057,43 +1017,14 @@ function selectShelvesForFeed(seeds = [], random = Math.random) {
     ...pickRotatingShelves(ROTATING_SHELVES, ROTATING_SHELVES_PER_BUILD, random)
   ];
 }
-var MAX_SONG_DURATION_SECONDS, MIN_SONG_DURATION_SECONDS, COMPILATION_PATTERNS, LYRICS_MATCH_THRESHOLD, PlayerInterstitialNode, InterstitialViewNode, QUICK_PICKS_QUERY_POOL, ANCHOR_SHELVES, ROTATING_SHELVES, ROTATING_SHELVES_PER_BUILD, MAX_PERSONALIZED_SHELVES, MAX_HOME_SEEDS, YouTubeMusicService, youtubeMusicService;
+var MAX_SONG_DURATION_SECONDS, LYRICS_MATCH_THRESHOLD, PlayerInterstitialNode, InterstitialViewNode, QUICK_PICKS_QUERY_POOL, ANCHOR_SHELVES, ROTATING_SHELVES, ROTATING_SHELVES_PER_BUILD, MAX_PERSONALIZED_SHELVES, MAX_HOME_SEEDS, YouTubeMusicService, youtubeMusicService;
 var init_youtubeMusic = __esm({
   "server/services/youtubeMusic.ts"() {
     init_formatters();
     init_geminiLyrics();
     init_jioSaavnService();
     Log.setLevel(Log.Level.NONE);
-    MAX_SONG_DURATION_SECONDS = 510;
-    MIN_SONG_DURATION_SECONDS = 30;
-    COMPILATION_PATTERNS = [
-      /\bjukebox\b/i,
-      /\baudio\s*jukebox\b/i,
-      /\bvideo\s*jukebox\b/i,
-      /\bfull\s*album\b/i,
-      /\bentire\s*album\b/i,
-      /\bcomplete\s*album\b/i,
-      /\ball\s*songs\b/i,
-      /\bsongs?\s*collection\b/i,
-      /\baudio\s*collection\b/i,
-      /\bmegamix\b/i,
-      /\bmega\s*mix\b/i,
-      /\bnon[- ]?stop\b/i,
-      /\bcompilation\b/i,
-      /\bdiscography\b/i,
-      /\bbgm\s*collection\b/i,
-      /\btheme\s*collection\b/i,
-      /\bsoundtrack\s*collection\b/i,
-      /\bfull\s*ost\b/i,
-      /\bost\s*collection\b/i,
-      /\b\d+\s*(?:hours?|hrs?)\b/i,
-      /\bcontinuous\s*mix\b/i,
-      /\balbum\s*stream\b/i,
-      /\bcomplete\s*soundtrack\b/i,
-      /\ball\s*audio\s*songs\b/i,
-      /\ball\s*video\s*songs\b/i,
-      /\bmashup\b/i
-    ];
+    MAX_SONG_DURATION_SECONDS = 15 * 60;
     LYRICS_MATCH_THRESHOLD = 0.62;
     PlayerInterstitialNode = class {
       static {
@@ -1419,7 +1350,6 @@ var init_youtubeMusic = __esm({
         const playlists = [];
         const pushSong = (item) => {
           const song = this.normalizeSong(item);
-          if (!isPlayableSongEntry(song)) return;
           song._originalIndex = songs.length;
           songs.push(song);
         };
@@ -1617,7 +1547,7 @@ var init_youtubeMusic = __esm({
         } else if (mood === "anirudh") {
           queries = [
             quickPicksQueryDef,
-            { id: "anirudh-1", title: "Anirudh Rockstar Hits", subtitle: "Chart-topping viral tracks", query: "Anirudh Ravichander hit songs Tamil", type: "song" },
+            { id: "anirudh-1", title: "Anirudh Rockstar Hits", subtitle: "Chart-topping viral tracks", query: "Anirudh Ravichander all songs Tamil", type: "song" },
             { id: "anirudh-2", title: "Anirudh Melodies & Love", subtitle: "Emotional and soulful songs", query: "Anirudh melody love songs Tamil", type: "song" }
           ];
         } else if (mood === "rahman") {
@@ -1942,8 +1872,7 @@ var init_youtubeMusic = __esm({
               try {
                 const vids = await ch.getVideos();
                 for (const item of (vids.videos || []).slice(0, 25)) {
-                  const s = this.normalizeSong(item);
-                  if (isPlayableSongEntry(s)) popularSongs.push(s);
+                  popularSongs.push(this.normalizeSong(item));
                 }
               } catch {
               }
@@ -1985,8 +1914,7 @@ var init_youtubeMusic = __esm({
             const contents = sec.contents || [];
             if (secTitle.includes("song") || secTitle.includes("popular") || secTitle.includes("top")) {
               for (const item of contents) {
-                const s = this.normalizeSong(item);
-                if (isPlayableSongEntry(s)) popularSongs.push(s);
+                popularSongs.push(this.normalizeSong(item));
               }
             } else if (secTitle.includes("album")) {
               for (const item of contents) {
@@ -1994,8 +1922,7 @@ var init_youtubeMusic = __esm({
               }
             } else if (secTitle.includes("single") || secTitle.includes("ep")) {
               for (const item of contents) {
-                const s = this.normalizeSong(item);
-                if (isPlayableSongEntry(s)) singles.push(s);
+                singles.push(this.normalizeSong(item));
               }
             } else if (secTitle.includes("similar") || secTitle.includes("fan") || secTitle.includes("related")) {
               for (const item of contents) {
@@ -2325,11 +2252,6 @@ var init_youtubeMusic = __esm({
        * Uses YouTube's authentic recommendation graph (watch_next_feed).
        * Filters out redundant/similar title songs and ranks relevant music.
        */
-      /**
-       * Get Spotify-Style Smart Queue & Song Radio
-       * Uses YouTube Music's authentic song radio recommendation graph (RDAMVM<songId>).
-       * Matches exact genre, language, tempo, and mood.
-       */
       async getQueue(songId) {
         const cached = this.queueCache.get(songId);
         if (cached && cached.expires > Date.now()) {
@@ -2339,26 +2261,25 @@ var init_youtubeMusic = __esm({
         if (!yt) return [];
         try {
           const pool = [];
-          const curSong = this.songCache.get(songId)?.data;
           try {
-            const rawUpNext = await yt.music.getUpNext(songId).catch(() => null);
-            for (const item of rawUpNext?.contents || []) {
-              const s = this.normalizeSong(item);
-              if (s.id && s.id !== songId && !s.id.startsWith("track-") && isPlayableSongEntry(s)) {
-                s.genre = s.genre || this.detectSongGenre(s.title, s.artist);
-                pool.push(s);
+            const info = await yt.getInfo(songId).catch(() => null);
+            if (info && info.watch_next_feed) {
+              for (const item of info.watch_next_feed) {
+                const s = this.normalizeSong(item);
+                if (s.id && s.id !== songId && !s.id.startsWith("track-")) {
+                  pool.push(s);
+                }
               }
             }
           } catch (e) {
-            console.warn(`yt.music.getUpNext notice for ${songId}:`, e.message);
+            console.warn(`watch_next_feed notice for ${songId}:`, e.message);
           }
-          if (pool.length < 15 && curSong?.artist) {
+          if (pool.length < 8) {
             try {
-              const artistRadio = await yt.music.search(`${curSong.artist} hit songs`, { type: "song" }).catch(() => null);
-              for (const item of artistRadio?.songs?.contents || []) {
+              const rawUpNext = await yt.music.getUpNext(songId).catch(() => null);
+              for (const item of rawUpNext?.contents || []) {
                 const s = this.normalizeSong(item);
-                if (s.id && s.id !== songId && !s.id.startsWith("track-") && isPlayableSongEntry(s)) {
-                  s.genre = s.genre || this.detectSongGenre(s.title, s.artist);
+                if (s.id && s.id !== songId && !s.id.startsWith("track-")) {
                   pool.push(s);
                 }
               }
@@ -2367,18 +2288,14 @@ var init_youtubeMusic = __esm({
           }
           if (pool.length < 8) {
             try {
-              const info = await yt.getInfo(songId).catch(() => null);
-              if (info && info.watch_next_feed) {
-                for (const item of info.watch_next_feed) {
-                  const s = this.normalizeSong(item);
-                  if (s.id && s.id !== songId && !s.id.startsWith("track-") && isPlayableSongEntry(s)) {
-                    s.genre = s.genre || this.detectSongGenre(s.title, s.artist);
-                    pool.push(s);
-                  }
-                }
+              const timeoutHelper = (p, ms) => Promise.race([p.catch(() => null), new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
+              const curSong = this.songCache.get(songId)?.data;
+              const query = curSong ? `${curSong.title} ${curSong.artist}` : "Tamil trending hit songs";
+              const fallback = await timeoutHelper(this.search(query, "song"), 3e3);
+              if (fallback?.songs) {
+                pool.push(...fallback.songs);
               }
-            } catch (e) {
-              console.warn(`watch_next_feed fallback notice for ${songId}:`, e.message);
+            } catch {
             }
           }
           const finalQueue = [];
@@ -2387,14 +2304,12 @@ var init_youtubeMusic = __esm({
           for (const song of pool) {
             if (!song || !song.id || seenIds.has(song.id)) continue;
             if (!song.title || song.title === "Unknown Track") continue;
-            if (!isPlayableSongEntry(song)) continue;
             const isDuplicateTitle = acceptedTitles.some((t) => isTitleTooSimilar(song.title, t));
             if (isDuplicateTitle) continue;
             seenIds.add(song.id);
             acceptedTitles.push(song.title);
-            song.genre = song.genre || this.detectSongGenre(song.title, song.artist);
             finalQueue.push(song);
-            if (finalQueue.length >= 35) break;
+            if (finalQueue.length >= 25) break;
           }
           this.queueCache.set(songId, { data: finalQueue, expires: Date.now() + 36e5 });
           return finalQueue;
@@ -2402,26 +2317,6 @@ var init_youtubeMusic = __esm({
           console.error(`getQueue error for ${songId}:`, err.message);
           return [];
         }
-      }
-      /** Detects accurate genre and mood for queue labeling */
-      detectSongGenre(title, artist) {
-        const combined = `${title || ""} ${artist || ""}`.toLowerCase();
-        if (/\b(kuthu|dappan|marana|beat|party|dance|club|thara|kuththu|gaana)\b/i.test(combined)) return "Kuthu & Dance";
-        if (/\b(melody|love|kadhal|romantic|feelings|soul|heart|unplugged|acoustic|piano)\b/i.test(combined)) return "Melody & Soul";
-        if (/\b(lo-?fi|chill|slowed|reverb|ambient|relax|sleep|study|night)\b/i.test(combined)) return "Lo-Fi & Chill";
-        if (/\b(rap|hip-?hop|trap|drill|cypher|freestyle)\b/i.test(combined)) return "Hip-Hop & Rap";
-        if (/\b(remix|edm|house|techno|trance|electro|dj)\b/i.test(combined)) return "EDM & Remix";
-        if (/\b(rock|metal|guitar|punk|alternative|band)\b/i.test(combined)) return "Indie & Alternative";
-        if (/\b(carnatic|classical|devotional|bhajan|bakthi|temple|shiva|murugan|ragam)\b/i.test(combined)) return "Golden Classics";
-        if (/\b(anirudh|santhosh narayanan|hiphop tamizha|sam c\.?s|thaman)\b/i.test(artist.toLowerCase())) return "High Energy & Pop";
-        if (/\b(a\.?r\.?\s*rahman|harris jayaraj|sid sriram|yuvan|pradeep kumar|shreya ghoshal|harini)\b/i.test(artist.toLowerCase())) return "Melody & Soul";
-        if (/\b(ilaiyaraaja|spb|s\.?p\.?\s*balasubrahmanyam|yesudas|janaki|chithra)\b/i.test(artist.toLowerCase())) return "Golden Classics";
-        if (/\b(paal dabba|asal kolaar|ofro|arivu|mc)\b/i.test(artist.toLowerCase())) return "Hip-Hop & Rap";
-        if (/\b(the weeknd|drake|eminem|travis scott|kanye|kendrick)\b/i.test(artist.toLowerCase())) return "Hip-Hop & Rap";
-        if (/\b(taylor swift|ariana|dua lipa|billie eilish|ed sheeran|justin bieber|olivia rodrigo)\b/i.test(artist.toLowerCase())) return "High Energy & Pop";
-        if (/\b(alan walker|marshmello|martin garrix|david guetta|avicii|chainsmokers)\b/i.test(artist.toLowerCase())) return "EDM & Remix";
-        if (/\b(coldplay|imagine dragons|queen|linkin park|maroon 5)\b/i.test(artist.toLowerCase())) return "Indie & Alternative";
-        return "Pop & Soundtracks";
       }
       /**
        * Playback Stream Handler
@@ -2909,81 +2804,6 @@ var init_audioFallback = __esm({
   }
 });
 
-// server/services/thumbnailResolver.ts
-async function resolveTrackArtwork(title, artist) {
-  if (!title || !title.trim()) return void 0;
-  const cacheKey = `${title.trim().toLowerCase()}__${(artist || "").trim().toLowerCase()}`;
-  if (thumbnailCache.has(cacheKey)) {
-    return thumbnailCache.get(cacheKey);
-  }
-  const cleanTitle = title.replace(/\[[^\]]*\]/g, " ").replace(/\([^)]*\)/g, " ").replace(/ft\..*$/i, "").replace(/feat\..*$/i, "").replace(/[\(\)\[\]"']/g, " ").replace(/\s+/g, " ").trim();
-  const cleanArtist = (artist || "").split(/[,/&|;]/)[0].replace(/\s*-\s*Topic$/i, "").replace(/\s*VEVO$/i, "").trim();
-  try {
-    const query = `${cleanTitle} ${cleanArtist}`.trim();
-    const url = `https://www.jiosaavn.com/api.php?__call=autocomplete.get&_format=json&_marker=0&cc=in&includeMetaTags=1&query=${encodeURIComponent(query)}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2500);
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-      },
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-    if (res.ok) {
-      const data = await res.json();
-      const firstSong = data.songs?.data?.[0];
-      if (firstSong?.image) {
-        const highRes = firstSong.image.replace("50x50", "500x500").replace("150x150", "500x500");
-        thumbnailCache.set(cacheKey, highRes);
-        return highRes;
-      }
-    }
-  } catch {
-  }
-  try {
-    const candidates = await youtubeMusicService.getCandidatesForTrack(
-      `art_${encodeURIComponent(cleanTitle.slice(0, 20))}`,
-      cleanTitle,
-      cleanArtist
-    );
-    if (candidates && candidates.length > 0 && candidates[0].artworkUrl) {
-      let art = candidates[0].artworkUrl;
-      if (art.includes("i.ytimg.com")) {
-        art = art.replace(/hq720\.jpg/i, "hqdefault.jpg");
-      }
-      thumbnailCache.set(cacheKey, art);
-      return art;
-    }
-  } catch {
-  }
-  return void 0;
-}
-async function batchResolveArtworks(tracks) {
-  const result = /* @__PURE__ */ new Map();
-  const CHUNK_SIZE = 8;
-  for (let i = 0; i < tracks.length; i += CHUNK_SIZE) {
-    const chunk = tracks.slice(i, i + CHUNK_SIZE);
-    await Promise.all(
-      chunk.map(async (t) => {
-        const key = t.id || `${t.title}_${t.artist || ""}`;
-        const artwork = await resolveTrackArtwork(t.title, t.artist);
-        if (artwork) {
-          result.set(key, artwork);
-        }
-      })
-    );
-  }
-  return result;
-}
-var thumbnailCache;
-var init_thumbnailResolver = __esm({
-  "server/services/thumbnailResolver.ts"() {
-    init_youtubeMusic();
-    thumbnailCache = /* @__PURE__ */ new Map();
-  }
-});
-
 // server/routes/songs.ts
 import { Router as Router3 } from "express";
 import { Readable } from "stream";
@@ -3117,7 +2937,6 @@ var init_songs = __esm({
     init_youtubeMusic();
     init_audioFallback();
     init_jioSaavnService();
-    init_thumbnailResolver();
     songsRouter = Router3();
     songsRouter.get("/candidates", async (req, res) => {
       const id = String(req.query.id || "");
@@ -3330,35 +3149,6 @@ var init_songs = __esm({
         duration: resolvedDuration || durationHint
       });
     });
-    songsRouter.get("/artwork", async (req, res) => {
-      const title = String(req.query.title || "");
-      const artist = String(req.query.artist || "");
-      try {
-        const artworkUrl = await resolveTrackArtwork(title, artist);
-        if (artworkUrl) {
-          return res.json({ artworkUrl });
-        }
-        return res.status(404).json({ error: "Artwork not found" });
-      } catch (err) {
-        return res.status(500).json({ error: err.message });
-      }
-    });
-    songsRouter.post("/batch-artworks", async (req, res) => {
-      const tracks = req.body?.tracks;
-      if (!Array.isArray(tracks)) {
-        return res.status(400).json({ error: 'Expected "tracks" array' });
-      }
-      try {
-        const map = await batchResolveArtworks(tracks);
-        const artworks = {};
-        for (const [k, v] of map.entries()) {
-          artworks[k] = v;
-        }
-        return res.json({ artworks });
-      } catch (err) {
-        return res.status(500).json({ error: err.message });
-      }
-    });
   }
 });
 
@@ -3523,11 +3313,9 @@ var init_imageProxy = __esm({
           return res.status(400).json({ error: "Invalid URL protocol" });
         }
         if (targetUrl.includes("googleusercontent.com") || targetUrl.includes("ggpht.com")) {
-          if (targetUrl.includes("=w") || targetUrl.includes("=s")) {
-            targetUrl = targetUrl.replace(/=w\d+-h\d+[^?&#]*/g, "=w544-h544-l90-rj");
-            targetUrl = targetUrl.replace(/=s\d+[^?&#]*/g, "=s544-c-k-c0x00ffffff-no-rj");
-          } else {
-            targetUrl = `${targetUrl}=w544-h544-l90-rj`;
+          if (!targetUrl.includes("=w") && !targetUrl.includes("=s")) {
+            targetUrl = targetUrl.replace(/=w\d+-h\d+[^?&#]*/g, "=w800-h800-l90-rj");
+            targetUrl = targetUrl.replace(/=s\d+[^?&#]*/g, "=s800-c-k-c0x00ffffff-no-rj");
           }
         }
         if (targetUrl.includes("i.ytimg.com")) {
@@ -3556,8 +3344,9 @@ var init_imageProxy = __esm({
           const videoIdMatch = imageUrl.match(/(?:vi\/|v=|\/)([a-zA-Z0-9_-]{11})(?:\/|\.|\?|$)/);
           if (videoIdMatch && videoIdMatch[1]) {
             const fallbacks = [
-              `https://i.ytimg.com/vi/${videoIdMatch[1]}/hqdefault.jpg`,
-              `https://i.ytimg.com/vi/${videoIdMatch[1]}/mqdefault.jpg`
+              `https://i.ytimg.com/vi/${videoIdMatch[1]}/hq720.jpg`,
+              `https://i.ytimg.com/vi/${videoIdMatch[1]}/sddefault.jpg`,
+              `https://i.ytimg.com/vi/${videoIdMatch[1]}/hqdefault.jpg`
             ];
             for (const fallbackUrl of fallbacks) {
               const fbRes = await fetch(fallbackUrl);
@@ -3769,23 +3558,24 @@ var init_ytmusic = __esm({
     }, 5 * 60 * 1e3);
     ytmusicRouter.post("/auth/device-code", async (req, res) => {
       try {
-        const { Innertube: Innertube2 } = await import("youtubei.js");
-        const tvClient = await Innertube2.create({ client_type: "TV" });
-        const clientId = await tvClient.session.oauth.getClientID();
-        tvClient.session.oauth.client_id = clientId;
-        const codeData = await tvClient.session.oauth.getDeviceAndUserCode();
+        const yt = await youtubeMusicService.getInnertube();
+        if (!yt) {
+          return res.status(503).json({ error: "YouTube engine currently unavailable" });
+        }
+        let clientId = yt.session.oauth.client_id;
+        if (!clientId) {
+          clientId = await yt.session.oauth.getClientID();
+          yt.session.oauth.client_id = clientId;
+        }
+        const codeData = await yt.session.oauth.getDeviceAndUserCode();
         deviceSessions.set(codeData.device_code, {
           client_id: clientId,
-          tvClient,
           status: "pending",
           createdAt: Date.now()
         });
-        const verification_url = codeData.verification_url || "https://www.google.com/device";
-        const prefilled_url = `${verification_url}?user_code=${encodeURIComponent(codeData.user_code)}`;
         res.json({
           user_code: codeData.user_code,
-          verification_url,
-          prefilled_url,
+          verification_url: codeData.verification_url,
           device_code: codeData.device_code,
           expires_in: codeData.expires_in,
           interval: codeData.interval || 5
@@ -3814,7 +3604,7 @@ var init_ytmusic = __esm({
           code: deviceCode,
           grant_type: "http://oauth.net/grant_type/device/1.0"
         };
-        const tokenRes = await fetch("https://www.youtube.com/o/oauth2/token", {
+        const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
@@ -3839,58 +3629,22 @@ var init_ytmusic = __esm({
         }
         if (tokenData.access_token) {
           let userProfile = null;
-          let accountName = "YouTube Music User";
-          let avatar = null;
-          let email = null;
-          let likedSongs = [];
           try {
-            if (session.tvClient) {
-              session.tvClient.session.oauth.setTokens(tokenData);
-              const accountInfo = await session.tvClient.account.getInfo().catch(() => null);
-              if (accountInfo?.contents?.[0]) {
-                const acc = accountInfo.contents[0];
-                accountName = acc.account_name?.text || accountName;
-                avatar = acc.account_photo?.[0]?.url || avatar;
-                email = acc.email?.text || email;
-              }
-              const lm = await session.tvClient.getPlaylist("LM").catch(() => null);
-              if (lm && Array.isArray(lm.videos)) {
-                likedSongs = lm.videos.slice(0, 50).map((v) => ({
-                  id: v.id,
-                  title: v.title?.text || "Liked Song",
-                  artist: v.author?.name || "Artist",
-                  album: "YouTube Liked Songs",
-                  artworkUrl: v.thumbnails?.[0]?.url || avatar,
-                  duration: v.duration?.seconds || 210,
-                  streamUrl: `/api/song/${v.id}/audio`
-                }));
-              }
+            const userRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+              headers: { Authorization: `Bearer ${tokenData.access_token}` }
+            });
+            if (userRes.ok) {
+              userProfile = await userRes.json();
             }
-          } catch (err) {
-            console.warn("Account details extraction error:", err?.message);
-          }
-          if (!email) {
-            try {
-              const userRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-                headers: { Authorization: `Bearer ${tokenData.access_token}` }
-              });
-              if (userRes.ok) {
-                userProfile = await userRes.json();
-                if (userProfile.name) accountName = userProfile.name;
-                if (userProfile.picture) avatar = userProfile.picture;
-                if (userProfile.email) email = userProfile.email;
-              }
-            } catch {
-            }
+          } catch (e) {
           }
           const uid = `yt_${userProfile?.sub || Date.now().toString(36)}`;
           const user = {
             uid,
-            displayName: accountName,
-            email: email || `${accountName.toLowerCase().replace(/[^a-z0-9]/g, "")}@gmail.com`,
-            photoURL: avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(accountName)}`,
-            handle: email ? `@${email.split("@")[0]}` : `@${accountName.toLowerCase().replace(/[^a-z0-9]/g, "")}`,
-            isRealAccount: true
+            displayName: userProfile?.name || "YouTube Music User",
+            email: userProfile?.email || null,
+            photoURL: userProfile?.picture || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&h=200&fit=crop&crop=faces",
+            handle: userProfile?.email ? `@${userProfile.email.split("@")[0]}` : "@ytmusic_user"
           };
           session.status = "authenticated";
           session.tokens = {
@@ -3902,8 +3656,7 @@ var init_ytmusic = __esm({
           return res.json({
             status: "authenticated",
             tokens: session.tokens,
-            user,
-            likedSongs
+            user
           });
         }
         return res.json({ status: "pending" });
@@ -3919,40 +3672,27 @@ var init_ytmusic = __esm({
       try {
         const yt = await youtubeMusicService.getInnertube();
         if (!yt) return res.status(503).json({ error: "YouTube engine unavailable" });
-        let channelId = null;
-        let title = "";
-        let avatar = null;
-        let handle = "";
-        let subscribers = "";
-        if (query.startsWith("UC") && query.length >= 20) {
-          channelId = query;
+        let clean = query;
+        if (!clean.startsWith("http")) {
+          if (clean.startsWith("@")) clean = `https://www.youtube.com/${clean}`;
+          else if (clean.startsWith("UC")) clean = `https://www.youtube.com/channel/${clean}`;
+          else clean = `https://www.youtube.com/@${clean}`;
         }
-        const cleanSearchQuery = query.replace(/^https?:\/\/(www\.)?youtube\.com\//, "").replace(/^@/, "");
-        const searchRes = await yt.search(cleanSearchQuery, { type: "channel" }).catch(() => null);
-        const topChannel = searchRes?.channels?.[0];
-        if (topChannel) {
-          channelId = topChannel.id || channelId;
-          title = topChannel.author?.name || cleanSearchQuery;
-          avatar = topChannel.author?.thumbnails?.[0]?.url || null;
-          handle = topChannel.subscriber_count?.text?.startsWith("@") ? topChannel.subscriber_count.text : `@${cleanSearchQuery}`;
-          subscribers = topChannel.video_count?.text || "";
-        } else if (channelId) {
-          const channel = await yt.getChannel(channelId).catch(() => null);
-          title = channel?.metadata?.title || "YouTube Channel";
-          avatar = channel?.metadata?.avatar?.[0]?.url || null;
-          handle = `@${title.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
+        const resolved = await yt.resolveURL(clean).catch(() => null);
+        const browseId = resolved?.payload?.browseId || resolved?.payload?.channelId || (query.startsWith("UC") ? query : null);
+        if (!browseId) {
+          return res.status(404).json({ error: "Could not find YouTube channel. Please check the handle or link." });
         }
-        if (!channelId && !title) {
-          return res.status(404).json({ error: `Could not find YouTube channel for "${query}". Try searching by name or handle.` });
-        }
+        const channel = await yt.getChannel(browseId);
+        const title = channel?.metadata?.title || query;
+        const avatar = channel?.metadata?.avatar?.[0]?.url || null;
+        const channelId = browseId;
         const user = {
-          uid: `yt_ch_${channelId || Date.now().toString(36)}`,
+          uid: `yt_ch_${channelId}`,
           displayName: title,
-          photoURL: avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(title)}`,
-          handle: handle.startsWith("@") ? handle : `@${handle}`,
-          channelId,
-          subscribers,
-          isRealAccount: true
+          photoURL: avatar || "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=200&h=200&fit=crop",
+          handle: query.startsWith("@") ? query : `@${title.toLowerCase().replace(/[^a-z0-9]/g, "")}`,
+          channelId
         };
         res.json({
           success: true,
@@ -4063,50 +3803,34 @@ async function fetchPublicSpotifyPlaylist(urlOrId) {
   if (!entity) {
     throw new Error("Spotify playlist not found or has no tracks.");
   }
+  const coverUrl = entity.coverArt?.sources?.[0]?.url || entity.visualIdentity?.image?.[0]?.url || "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&q=80";
   const title = entity.title || entity.name || "Spotify Playlist";
   const description = entity.subtitle || entity.description || `Imported from Spotify (${type === "album" ? "Album" : "Playlist"})`;
   const rawTracks = Array.isArray(entity.trackList) ? entity.trackList : [];
-  const trackItems = rawTracks.map((t, index) => {
+  const tracks = rawTracks.map((t, index) => {
     const rawTrackId = t.uri ? t.uri.replace("spotify:track:", "") : `track_${index}`;
     const artist = t.subtitle || (Array.isArray(t.artists) ? t.artists.map((a) => a.name).join(", ") : "") || "Unknown Artist";
     const trackTitle = t.title || t.name || "Untitled Track";
+    const durationSec = Math.round((Number(t.duration) || 0) / 1e3) || 200;
+    const trackArt = t.coverArt?.sources?.[0]?.url || coverUrl;
     return {
       id: `sp_${rawTrackId}`,
-      rawTrackId,
+      spotifyId: rawTrackId,
       title: trackTitle,
       artist,
-      durationSec: Math.round((Number(t.duration) || 0) / 1e3) || 200,
-      spotifyArt: t.coverArt?.sources?.[0]?.url,
+      album: title,
+      artworkUrl: trackArt,
+      duration: durationSec,
+      source: "spotify",
       audioPreviewUrl: t.audioPreview?.url
     };
   });
-  const resolvedMap = await batchResolveArtworks(trackItems);
-  let initialCover = entity.coverArt?.sources?.[0]?.url || entity.visualIdentity?.image?.[0]?.url;
-  const tracks = trackItems.map((item) => {
-    const resolvedArt = resolvedMap.get(item.id);
-    const trackArt = item.spotifyArt || resolvedArt || initialCover || "";
-    if (!initialCover && resolvedArt) {
-      initialCover = resolvedArt;
-    }
-    return {
-      id: item.id,
-      spotifyId: item.rawTrackId,
-      title: item.title,
-      artist: item.artist,
-      album: title,
-      artworkUrl: trackArt,
-      duration: item.durationSec,
-      source: "spotify",
-      audioPreviewUrl: item.audioPreviewUrl
-    };
-  });
-  const finalCoverUrl = initialCover || tracks[0]?.artworkUrl || "";
   return {
     id,
     type,
     title,
     description,
-    artworkUrl: finalCoverUrl,
+    artworkUrl: coverUrl,
     trackCount: tracks.length,
     tracks
   };
@@ -4143,7 +3867,6 @@ async function exchangeCodeForToken(code) {
 var spotifyClientId, spotifyClientSecret, spotifyRedirectUri, SPOTIFY_AUTHORIZE_URL, SPOTIFY_API_BASE, SPOTIFY_SCOPES, CURATED_SPOTIFY_PLAYLISTS, spotifyRouter;
 var init_spotify = __esm({
   "server/routes/spotify.ts"() {
-    init_thumbnailResolver();
     spotifyClientId = process.env.SPOTIFY_CLIENT_ID || "";
     spotifyClientSecret = process.env.SPOTIFY_CLIENT_SECRET || "";
     spotifyRedirectUri = process.env.SPOTIFY_REDIRECT_URI || "http://localhost:3000/api/spotify/callback";

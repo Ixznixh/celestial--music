@@ -4,7 +4,6 @@ import { providerManager } from '../services/providerManager';
 import { ArtworkImage } from '../components/common/ArtworkImage';
 import { PlaylistThumbnail } from '../components/common/PlaylistThumbnail';
 import { formatTime, formatDuration } from '../utils/formatters';
-import { enrichPlaylistThumbnails } from '../services/thumbnailEnricher';
 import { useLongPress } from '../hooks/useLongPress';
 import { 
   Play, 
@@ -129,14 +128,6 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({
       setEditTitle(userPl.title);
       setEditDesc(userPl.description || '');
       setIsLoading(false);
-
-      // Automatically enrich missing thumbnails for Spotify / imported playlists
-      enrichPlaylistThumbnails(userPl).then(({ playlist: enriched, updated }) => {
-        if (updated) {
-          setPlaylist(enriched);
-          onUpdatePlaylist(enriched);
-        }
-      });
       return;
     }
 
@@ -147,12 +138,6 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({
         if (pl) {
           setEditTitle(pl.title);
           setEditDesc(pl.description || '');
-          enrichPlaylistThumbnails(pl).then(({ playlist: enriched, updated }) => {
-            if (updated) {
-              setPlaylist(enriched);
-              onUpdatePlaylist(enriched);
-            }
-          });
         }
       })
       .catch((err) => {

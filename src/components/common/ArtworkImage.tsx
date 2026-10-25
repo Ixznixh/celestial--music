@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Music } from 'lucide-react';
-import { fetchSongArtwork } from '../../services/thumbnailEnricher';
 
 interface ArtworkImageProps {
   src?: string;
@@ -65,13 +64,8 @@ export const ArtworkImage: React.FC<ArtworkImageProps> = ({
   priority = false,
   placeholderColor,
 }) => {
-  const [dynamicSrc, setDynamicSrc] = useState<string | null>(null);
-
-  const isValidInitialSrc = src && !src.includes('unsplash.com') && !src.includes('placeholder');
-  const baseSrc = isValidInitialSrc ? src : (dynamicSrc || undefined);
-
   // Upgraded source based on optimal requested size
-  const optimizedSrc = useMemo(() => upgradeArtworkUrl(baseSrc, size as 'small' | 'medium' | 'large' | 'full'), [baseSrc, size]);
+  const optimizedSrc = useMemo(() => upgradeArtworkUrl(src, size as 'small' | 'medium' | 'large' | 'full'), [src, size]);
 
   // Stage 0: Direct optimized src, Stage 1: hqdefault.jpg (reliable), Stage 2: /api/image-proxy, Stage 3: placeholder
   const [stage, setStage] = useState<number>(0);
@@ -82,27 +76,14 @@ export const ArtworkImage: React.FC<ArtworkImageProps> = ({
     setIsLoaded(false);
   }, [optimizedSrc]);
 
-  // If initial src is missing or an unsplash placeholder, resolve real album art dynamically
-  useEffect(() => {
-    if (!isValidInitialSrc && alt && alt.length > 2 && alt !== 'Celestial Music' && alt !== 'Playlist') {
-      let active = true;
-      fetchSongArtwork(alt).then((res) => {
-        if (active && res) {
-          setDynamicSrc(res);
-        }
-      });
-      return () => { active = false; };
-    }
-  }, [isValidInitialSrc, alt]);
-
   // Extract video ID from URL or fallback prop
   const videoId = useMemo(() => {
     if (fallbackVideoId) return fallbackVideoId;
-    if (!baseSrc && !optimizedSrc) return null;
-    const candidate = baseSrc || optimizedSrc || '';
+    if (!src && !optimizedSrc) return null;
+    const candidate = src || optimizedSrc || '';
     const match = candidate.match(/(?:vi\/|v=|\/)([a-zA-Z0-9_-]{11})(?:\/|\.|\?|$)/);
     return match ? match[1] : null;
-  }, [baseSrc, optimizedSrc, fallbackVideoId]);
+  }, [src, optimizedSrc, fallbackVideoId]);
 
   // Determine current image URL based on fallback stage
   const currentSrc = useMemo(() => {
@@ -126,16 +107,6 @@ export const ArtworkImage: React.FC<ArtworkImageProps> = ({
       setStage(1);
     } else if (stage < 2 && (optimizedSrc || videoId)) {
       setStage(2);
-    } else if (!dynamicSrc && alt && alt.length > 2 && alt !== 'Celestial Music' && alt !== 'Playlist') {
-      // Last-mile recovery: fetch song artwork by title/artist
-      fetchSongArtwork(alt).then((res) => {
-        if (res) {
-          setDynamicSrc(res);
-          setStage(0);
-        } else {
-          setStage(3);
-        }
-      });
     } else {
       setStage(3);
     }

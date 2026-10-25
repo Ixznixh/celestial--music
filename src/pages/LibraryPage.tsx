@@ -8,7 +8,6 @@ import { useLongPress } from '../hooks/useLongPress';
 import { useDownloads, formatBytes } from '../hooks/useDownloads';
 import { isAutoDownloadEnabled, setAutoDownloadEnabled } from '../services/autoDownload';
 import { providerManager } from '../services/providerManager';
-import { enrichPlaylistThumbnails } from '../services/thumbnailEnricher';
 import { 
   ListMusic, 
   User, 
@@ -64,20 +63,6 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
   useEffect(() => {
     isAutoDownloadEnabled().then(setAutoDownload).catch(() => {});
   }, []);
-
-  // Background enrichment for imported playlists with missing thumbnails
-  useEffect(() => {
-    if (!playlists || playlists.length === 0) return;
-    for (const pl of playlists) {
-      const hasMissing =
-        !pl.artworkUrl ||
-        pl.artworkUrl.includes('unsplash.com') ||
-        (pl.tracks && pl.tracks.some((t) => !t.artworkUrl || t.artworkUrl.includes('unsplash.com')));
-      if (hasMissing) {
-        enrichPlaylistThumbnails(pl).catch(() => {});
-      }
-    }
-  }, [playlists]);
 
   const handleAutoDownloadToggle = (enabled: boolean) => {
     setAutoDownload(enabled);
