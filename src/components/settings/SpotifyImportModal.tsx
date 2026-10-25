@@ -177,8 +177,8 @@ export const SpotifyImportModal: React.FC<SpotifyImportModalProps> = ({
                   </svg>
                 </div>
                 <div>
-                  <h2 className="text-base font-bold tracking-tight">Import from Spotify</h2>
-                  <p className="text-xs text-neutral-400">Add any playlist or album directly to Celestial</p>
+                  <h2 className="text-base font-bold tracking-tight">Import from Spotify Link</h2>
+                  <p className="text-xs text-neutral-400">Paste any public playlist or album link to import</p>
                 </div>
               </div>
               <motion.button
@@ -518,10 +518,10 @@ export const SpotifyImportModal: React.FC<SpotifyImportModalProps> = ({
             {/* Footer status notice */}
             <div className="px-5 py-3 border-t border-white/10 bg-white/[0.01] flex items-center justify-between text-[11px] text-neutral-400">
               <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-[#1DB954] animate-pulse" />
-                <span>Spotify Bridge Active</span>
+                <div className="w-2 h-2 rounded-full bg-[#1DB954]" />
+                <span>No login required • Direct link import</span>
               </div>
-              <span>Saved locally & synced to account</span>
+              <span>Saved to Library</span>
             </div>
           </motion.div>
         </motion.div>

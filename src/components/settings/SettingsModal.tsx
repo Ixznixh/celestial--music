@@ -343,13 +343,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <div>
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-medium text-white group-hover:text-[#1DB954] transition">
-                              Import Playlist from Spotify
+                              Import from Spotify Link
                             </p>
                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[#1DB954]/20 text-[#1DB954] border border-[#1DB954]/30">
                               NEW
                             </span>
                           </div>
-                          <p className="text-xs text-neutral-400">Import by link, URI, tracklist, or popular hits</p>
+                          <p className="text-xs text-neutral-400">Paste any public Spotify playlist or album URL</p>
                         </div>
                       </div>
                       <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-white transition" />
@@ -1053,8 +1053,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           </svg>
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-white group-hover:text-[#1DB954] transition" id="spotify-status-text">Import Playlist from Spotify</p>
-                          <p className="text-xs text-neutral-400" id="spotify-subtext">Import public playlists, albums or connect account</p>
+                          <p className="text-sm font-medium text-white group-hover:text-[#1DB954] transition" id="spotify-status-text">Import from Spotify Link</p>
+                          <p className="text-xs text-neutral-400" id="spotify-subtext">Paste any public playlist or album URL to import</p>
                         </div>
                       </div>
                       <button
@@ -1063,9 +1063,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           setIsSpotifyImportOpen(true);
                         }}
                         className="px-2.5 py-1 rounded-xl bg-[#1DB954] hover:bg-[#1ed760] text-black font-semibold shrink-0 transition text-[11px] shadow-[0_0_10px_rgba(29,185,84,0.3)] cursor-pointer"
-                        aria-label="Import from Spotify"
+                        aria-label="Import from Spotify Link"
                       >
-                        Import
+                        Import Link
                       </button>
                     </div>
 
