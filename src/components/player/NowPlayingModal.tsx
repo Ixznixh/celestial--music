@@ -370,7 +370,7 @@ export const NowPlayingModal: React.FC<NowPlayingModalProps> = ({
       </div>
 
       {/* Top bar with dismiss chevron, centered context title, and share button */}
-      <header className="relative z-10 px-4 sm:px-6 pt-1.5 pb-1 flex items-center justify-between min-h-[44px] shrink-0">
+      <header className="relative z-10 w-full max-w-4xl mx-auto px-4 sm:px-6 pt-1.5 pb-1 flex items-center justify-between min-h-[44px] shrink-0">
         <motion.button
           whileTap={{ scale: 0.85 }}
           onClick={() => {
@@ -535,7 +535,7 @@ export const NowPlayingModal: React.FC<NowPlayingModalProps> = ({
                     : `0 10px 30px -8px rgba(${palette.glowRgb}, 0.25), 0 6px 18px -6px rgba(0,0,0,0.5)`
                 }}
                 transition={{ type: 'spring', damping: 20, stiffness: 200 }}
-                className="w-full max-w-[min(72vw,300px,34vh)] aspect-square rounded-3xl overflow-hidden cursor-grab active:cursor-grabbing relative"
+                className="w-full max-w-[min(72vw,300px,34vh)] md:max-w-[min(45vw,380px,42vh)] aspect-square rounded-3xl overflow-hidden cursor-grab active:cursor-grabbing relative"
               >
                 <AnimatePresence mode="wait" initial={false}>
                   <motion.div
@@ -564,7 +564,7 @@ export const NowPlayingModal: React.FC<NowPlayingModalProps> = ({
       </main>
 
       {/* Bottom Controls Area - Auto-scaled for all phone heights */}
-      <footer className="relative z-10 px-5 sm:px-8 pb-2 sm:pb-4 flex flex-col space-y-3 sm:space-y-4 md:space-y-5 max-w-lg mx-auto w-full shrink-0">
+      <footer className="relative z-10 px-5 sm:px-8 pb-2 sm:pb-4 flex flex-col space-y-3 sm:space-y-4 md:space-y-5 max-w-lg md:max-w-xl mx-auto w-full shrink-0">
         {/* Centered Track Title & Artist Info with Balanced Heart Action */}
         <div className="flex items-center justify-between gap-2">
           {/* Left spacer for optical center balance */}

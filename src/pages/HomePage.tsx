@@ -13,6 +13,7 @@ import {
   Play,
   Pause,
   ChevronRight,
+  ChevronLeft,
   Sparkles,
   Flame,
   Radio,
@@ -513,22 +514,48 @@ export const HomePage: React.FC<HomePageProps> = ({
               </h3>
             </div>
             {quickPicksSongs.length > 0 && (
-              <button
-                onClick={() => handlePlayAction(quickPicksSongs[0], quickPicksSongs)}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white hover:bg-neutral-200 active:scale-95 text-[11px] font-bold text-black transition"
-              >
-                <Play className="w-3 h-3 fill-black text-black" />
-                <span>Play All</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {quickPicksColumns.length > 4 && (
+                  <div className="hidden md:flex items-center gap-1 mr-1">
+                    <button
+                      onClick={() => {
+                        const el = document.getElementById('quick-picks-carousel');
+                        if (el) el.scrollBy({ left: -600, behavior: 'smooth' });
+                      }}
+                      aria-label="Scroll left"
+                      className="p-1 rounded-full bg-white/5 hover:bg-white/15 text-neutral-300 hover:text-white transition cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        const el = document.getElementById('quick-picks-carousel');
+                        if (el) el.scrollBy({ left: 600, behavior: 'smooth' });
+                      }}
+                      aria-label="Scroll right"
+                      className="p-1 rounded-full bg-white/5 hover:bg-white/15 text-neutral-300 hover:text-white transition cursor-pointer"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+                <button
+                  onClick={() => handlePlayAction(quickPicksSongs[0], quickPicksSongs)}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white hover:bg-neutral-200 active:scale-95 text-[11px] font-bold text-black transition"
+                >
+                  <Play className="w-3 h-3 fill-black text-black" />
+                  <span>Play All</span>
+                </button>
+              </div>
             )}
           </div>
 
           {/* Compact 4-row Column Swiper */}
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1 snap-x snap-mandatory">
+          <div id="quick-picks-carousel" className="flex gap-3 overflow-x-auto no-scrollbar pb-1 snap-x snap-mandatory scroll-smooth">
             {quickPicksColumns.map((col, colIdx) => (
               <div
                 key={colIdx}
-                className="w-[82vw] max-w-[290px] sm:w-[310px] md:w-[340px] lg:w-[360px] shrink-0 space-y-1 snap-start"
+                className="w-[82vw] max-w-[290px] sm:w-[310px] md:w-[340px] lg:w-[360px] xl:w-0 xl:flex-1 shrink-0 xl:shrink space-y-1 snap-start"
               >
                 {col.map((song) => {
                   const isPlayingThis = player.isPlaying && player.currentSong?.id === song.id;
@@ -658,16 +685,40 @@ export const HomePage: React.FC<HomePageProps> = ({
                   <p className="text-[10px] text-neutral-400 mt-0.5">{section.subtitle}</p>
                 )}
               </div>
-              <button
-                onClick={() => onNavigate({ type: 'seeAll', sectionId: section.id, title: section.title })}
-                className="text-xs font-semibold text-rose-400 hover:text-rose-300 flex items-center gap-0.5 shrink-0 ml-2 active:scale-95 transition"
-              >
-                More <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <div className="hidden md:flex items-center gap-1 mr-1">
+                  <button
+                    onClick={() => {
+                      const el = document.getElementById(`carousel-${section.id}`);
+                      if (el) el.scrollBy({ left: -600, behavior: 'smooth' });
+                    }}
+                    aria-label="Scroll left"
+                    className="p-1 rounded-full bg-white/5 hover:bg-white/15 text-neutral-300 hover:text-white transition cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      const el = document.getElementById(`carousel-${section.id}`);
+                      if (el) el.scrollBy({ left: 600, behavior: 'smooth' });
+                    }}
+                    aria-label="Scroll right"
+                    className="p-1 rounded-full bg-white/5 hover:bg-white/15 text-neutral-300 hover:text-white transition cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+                <button
+                  onClick={() => onNavigate({ type: 'seeAll', sectionId: section.id, title: section.title })}
+                  className="text-xs font-semibold text-rose-400 hover:text-rose-300 flex items-center gap-0.5 shrink-0 ml-1 active:scale-95 transition"
+                >
+                  More <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
 
             {/* Compact Horizontally Scrollable Cards Carousel */}
-            <div className="flex gap-2.5 overflow-x-auto no-scrollbar pb-1">
+            <div id={`carousel-${section.id}`} className="flex gap-2.5 overflow-x-auto no-scrollbar pb-1 scroll-smooth">
               {Array.isArray(section.items) && section.items.map((item) => {
                 if (isDemoItem(item)) return null;
 

@@ -96,9 +96,9 @@ export const DesktopPlayerBar: React.FC<DesktopPlayerBarProps> = ({
   return (
     <footer
       aria-label="Desktop Player Controls"
-      className="hidden md:flex fixed bottom-0 inset-x-0 h-20 bg-[#121214] border-t border-white/10 z-40 px-3 md:px-5 lg:px-8 select-none shadow-[0_-8px_32px_rgba(0,0,0,0.6)]"
+      className="hidden md:flex fixed bottom-0 inset-x-0 h-20 bg-[#121214] border-t border-white/10 z-40 select-none shadow-[0_-8px_32px_rgba(0,0,0,0.6)]"
     >
-      <div className="w-full max-w-7xl mx-auto flex items-center justify-between gap-4">
+      <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
         {/* Left: Track Details */}
         <div className="flex items-center gap-3.5 min-w-0 w-1/4 max-w-xs">
           <div
