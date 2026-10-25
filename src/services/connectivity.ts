@@ -70,6 +70,11 @@ export interface ConnectivityState {
     email?: string;
     name?: string;
     photoURL?: string;
+    handle?: string;
+    channelId?: string;
+    subscribers?: string;
+    isRealAccount?: boolean;
+    authMethod?: 'google' | 'channel' | 'cookie';
   };
   spotify: {
     connected: boolean;
@@ -337,3 +342,71 @@ export async function recordScrobble(song: Song): Promise<void> {
     });
   }
 }
+
+/** Initiates real Google & YouTube Music device authorization */
+export async function startGoogleDeviceAuth(): Promise<{
+  user_code: string;
+  verification_url: string;
+  prefilled_url: string;
+  device_code: string;
+  expires_in: number;
+  interval: number;
+}> {
+  const res = await fetch('/api/ytmusic/auth/device-code', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to initialize Google authentication');
+  }
+  return res.json();
+}
+
+/** Polls Google authorization for real YouTube Music login completion */
+export async function pollGoogleDeviceAuth(deviceCode: string): Promise<{
+  status: 'pending' | 'slow_down' | 'expired' | 'denied' | 'authenticated' | 'error';
+  user?: any;
+  tokens?: any;
+  likedSongs?: any[];
+  error?: string;
+}> {
+  const res = await fetch(`/api/ytmusic/auth/device-poll?code=${encodeURIComponent(deviceCode)}`);
+  return res.json();
+}
+
+/** Connect real YouTube channel by handle (@username), name, or channel link */
+export async function connectYouTubeChannel(query: string): Promise<{
+  success: boolean;
+  user: any;
+}> {
+  const res = await fetch('/api/ytmusic/auth/connect-channel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Failed to connect YouTube channel');
+  }
+  return data;
+}
+
+/** Connect real YouTube Music session by cookie (syncs real Liked Songs) */
+export async function connectYouTubeCookie(cookie: string): Promise<{
+  success: boolean;
+  user: any;
+  likedSongs?: any[];
+}> {
+  const res = await fetch('/api/ytmusic/auth/connect-cookie', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cookie }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Failed to connect YouTube Music cookie');
+  }
+  return data;
+}
+

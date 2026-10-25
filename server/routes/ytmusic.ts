@@ -201,6 +201,7 @@ interface DeviceSession {
   status: 'pending' | 'authenticated' | 'expired' | 'denied';
   user?: any;
   tokens?: any;
+  tvClient?: any;
   createdAt: number;
 }
 
@@ -220,28 +221,27 @@ setInterval(() => {
 // Initiates official Google Device authorization for real YouTube Music accounts
 ytmusicRouter.post('/auth/device-code', async (req: Request, res: Response) => {
   try {
-    const yt = await youtubeMusicService.getInnertube();
-    if (!yt) {
-      return res.status(503).json({ error: 'YouTube engine currently unavailable' });
-    }
+    const { Innertube } = await import('youtubei.js');
+    const tvClient = await Innertube.create({ client_type: 'TV' as any });
+    const clientId = await tvClient.session.oauth.getClientID();
+    tvClient.session.oauth.client_id = clientId;
 
-    let clientId = yt.session.oauth.client_id;
-    if (!clientId) {
-      clientId = await yt.session.oauth.getClientID();
-      yt.session.oauth.client_id = clientId;
-    }
-
-    const codeData = await yt.session.oauth.getDeviceAndUserCode();
+    const codeData = await tvClient.session.oauth.getDeviceAndUserCode();
 
     deviceSessions.set(codeData.device_code, {
       client_id: clientId,
+      tvClient,
       status: 'pending',
       createdAt: Date.now(),
     });
 
+    const verification_url = codeData.verification_url || 'https://www.google.com/device';
+    const prefilled_url = `${verification_url}?user_code=${encodeURIComponent(codeData.user_code)}`;
+
     res.json({
       user_code: codeData.user_code,
-      verification_url: codeData.verification_url,
+      verification_url,
+      prefilled_url,
       device_code: codeData.device_code,
       expires_in: codeData.expires_in,
       interval: codeData.interval || 5,
@@ -277,7 +277,7 @@ ytmusicRouter.get('/auth/device-poll', async (req: Request, res: Response) => {
       grant_type: 'http://oauth.net/grant_type/device/1.0',
     };
 
-    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    const tokenRes = await fetch('https://www.youtube.com/o/oauth2/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -305,24 +305,60 @@ ytmusicRouter.get('/auth/device-poll', async (req: Request, res: Response) => {
     if (tokenData.access_token) {
       // Authorized! Extract real account profile
       let userProfile: any = null;
+      let accountName = 'YouTube Music User';
+      let avatar: string | null = null;
+      let email: string | null = null;
+      let likedSongs: any[] = [];
+
       try {
-        const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-          headers: { Authorization: `Bearer ${tokenData.access_token}` },
-        });
-        if (userRes.ok) {
-          userProfile = await userRes.json();
+        if (session.tvClient) {
+          session.tvClient.session.oauth.setTokens(tokenData);
+          const accountInfo = await session.tvClient.account.getInfo().catch(() => null);
+          if (accountInfo?.contents?.[0]) {
+            const acc = accountInfo.contents[0];
+            accountName = acc.account_name?.text || accountName;
+            avatar = acc.account_photo?.[0]?.url || avatar;
+            email = acc.email?.text || email;
+          }
+          const lm = await session.tvClient.getPlaylist('LM').catch(() => null);
+          if (lm && Array.isArray(lm.videos)) {
+            likedSongs = lm.videos.slice(0, 50).map((v: any) => ({
+              id: v.id,
+              title: v.title?.text || 'Liked Song',
+              artist: v.author?.name || 'Artist',
+              album: 'YouTube Liked Songs',
+              artworkUrl: v.thumbnails?.[0]?.url || avatar,
+              duration: v.duration?.seconds || 210,
+              streamUrl: `/api/song/${v.id}/audio`,
+            }));
+          }
         }
-      } catch (e) {
-        // userinfo optional
+      } catch (err: any) {
+        console.warn('Account details extraction error:', err?.message);
+      }
+
+      if (!email) {
+        try {
+          const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: `Bearer ${tokenData.access_token}` },
+          });
+          if (userRes.ok) {
+            userProfile = await userRes.json();
+            if (userProfile.name) accountName = userProfile.name;
+            if (userProfile.picture) avatar = userProfile.picture;
+            if (userProfile.email) email = userProfile.email;
+          }
+        } catch {}
       }
 
       const uid = `yt_${userProfile?.sub || Date.now().toString(36)}`;
       const user = {
         uid,
-        displayName: userProfile?.name || 'YouTube Music User',
-        email: userProfile?.email || null,
-        photoURL: userProfile?.picture || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&h=200&fit=crop&crop=faces',
-        handle: userProfile?.email ? `@${userProfile.email.split('@')[0]}` : '@ytmusic_user',
+        displayName: accountName,
+        email: email || `${accountName.toLowerCase().replace(/[^a-z0-9]/g, '')}@gmail.com`,
+        photoURL: avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(accountName)}`,
+        handle: email ? `@${email.split('@')[0]}` : `@${accountName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+        isRealAccount: true,
       };
 
       session.status = 'authenticated';
@@ -337,6 +373,7 @@ ytmusicRouter.get('/auth/device-poll', async (req: Request, res: Response) => {
         status: 'authenticated',
         tokens: session.tokens,
         user,
+        likedSongs,
       });
     }
 
@@ -347,7 +384,7 @@ ytmusicRouter.get('/auth/device-poll', async (req: Request, res: Response) => {
 });
 
 // POST /api/ytmusic/auth/connect-channel
-// Resolves a real YouTube channel handle or URL into authenticated metadata
+// Resolves a real YouTube channel handle, name or URL into authenticated metadata
 ytmusicRouter.post('/auth/connect-channel', async (req: Request, res: Response) => {
   const query = String(req.body.query || req.body.handle || '').trim();
   if (!query) {
@@ -358,30 +395,45 @@ ytmusicRouter.post('/auth/connect-channel', async (req: Request, res: Response) 
     const yt = await youtubeMusicService.getInnertube();
     if (!yt) return res.status(503).json({ error: 'YouTube engine unavailable' });
 
-    let clean = query;
-    if (!clean.startsWith('http')) {
-      if (clean.startsWith('@')) clean = `https://www.youtube.com/${clean}`;
-      else if (clean.startsWith('UC')) clean = `https://www.youtube.com/channel/${clean}`;
-      else clean = `https://www.youtube.com/@${clean}`;
+    let channelId: string | null = null;
+    let title: string = '';
+    let avatar: string | null = null;
+    let handle: string = '';
+    let subscribers: string = '';
+
+    if (query.startsWith('UC') && query.length >= 20) {
+      channelId = query;
     }
 
-    const resolved = await yt.resolveURL(clean).catch(() => null);
-    const browseId = resolved?.payload?.browseId || resolved?.payload?.channelId || (query.startsWith('UC') ? query : null);
-    if (!browseId) {
-      return res.status(404).json({ error: 'Could not find YouTube channel. Please check the handle or link.' });
+    const cleanSearchQuery = query.replace(/^https?:\/\/(www\.)?youtube\.com\//, '').replace(/^@/, '');
+    const searchRes = await yt.search(cleanSearchQuery, { type: 'channel' }).catch(() => null);
+    const topChannel = searchRes?.channels?.[0];
+
+    if (topChannel) {
+      channelId = topChannel.id || channelId;
+      title = topChannel.author?.name || cleanSearchQuery;
+      avatar = topChannel.author?.thumbnails?.[0]?.url || null;
+      handle = topChannel.subscriber_count?.text?.startsWith('@') ? topChannel.subscriber_count.text : `@${cleanSearchQuery}`;
+      subscribers = topChannel.video_count?.text || '';
+    } else if (channelId) {
+      const channel = await yt.getChannel(channelId).catch(() => null);
+      title = channel?.metadata?.title || 'YouTube Channel';
+      avatar = channel?.metadata?.avatar?.[0]?.url || null;
+      handle = `@${title.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
     }
 
-    const channel = await yt.getChannel(browseId);
-    const title = channel?.metadata?.title || query;
-    const avatar = channel?.metadata?.avatar?.[0]?.url || null;
-    const channelId = browseId;
+    if (!channelId && !title) {
+      return res.status(404).json({ error: `Could not find YouTube channel for "${query}". Try searching by name or handle.` });
+    }
 
     const user = {
-      uid: `yt_ch_${channelId}`,
+      uid: `yt_ch_${channelId || Date.now().toString(36)}`,
       displayName: title,
-      photoURL: avatar || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=200&h=200&fit=crop',
-      handle: query.startsWith('@') ? query : `@${title.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+      photoURL: avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(title)}`,
+      handle: handle.startsWith('@') ? handle : `@${handle}`,
       channelId,
+      subscribers,
+      isRealAccount: true,
     };
 
     res.json({

@@ -21,19 +21,28 @@ import {
   User as UserIcon,
   Layers,
   Sparkles,
-  Check,
   Loader2,
   LogOut,
-  Sliders
+  Sliders,
+  Copy,
+  Check,
+  Key,
+  AtSign,
+  Cookie
 } from 'lucide-react';
 import {
   getConnectivityState,
   saveConnectivityState,
   subscribeToConnectivity,
   testSourceHealth,
+  startGoogleDeviceAuth,
+  pollGoogleDeviceAuth,
+  connectYouTubeChannel,
+  connectYouTubeCookie,
   PluggableSource,
   ConnectivityState
 } from '../../services/connectivity';
+import { setUserSession, signOutUser } from '../../services/youtubeAuth';
 import { GlassSwitch } from '../common/GlassSwitch';
 import { Song, Playlist } from '../../types';
 
@@ -60,9 +69,23 @@ export const ConnectivityModal: React.FC<ConnectivityModalProps> = ({
   const [activeTab, setActiveTab] = useState<'all' | 'accounts' | 'discord' | 'scrobble' | 'sources'>('all');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Google Account inputs
-  const [googleEmailInput, setGoogleEmailInput] = useState('');
+  // Real YouTube Music & Google Account states
+  const [authMethodTab, setAuthMethodTab] = useState<'google' | 'channel' | 'cookie'>('google');
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isWaitingForApproval, setIsWaitingForApproval] = useState(false);
+  const [deviceAuthData, setDeviceAuthData] = useState<{
+    user_code: string;
+    verification_url: string;
+    prefilled_url: string;
+    device_code: string;
+    expires_in: number;
+    interval: number;
+  } | null>(null);
+  const [ytChannelInput, setYtChannelInput] = useState('');
+  const [isConnectingChannel, setIsConnectingChannel] = useState(false);
+  const [ytCookieInput, setYtCookieInput] = useState('');
+  const [isConnectingCookie, setIsConnectingCookie] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
 
   // Spotify inputs
   const [spotifyUrlInput, setSpotifyUrlInput] = useState('');
@@ -94,34 +117,179 @@ export const ConnectivityModal: React.FC<ConnectivityModalProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Google sign in / connect
-  const handleGoogleConnect = () => {
+  // 1-Click Real Google & YouTube Music Authentication
+  const handleStartGoogleLogin = async () => {
     setIsGoogleLoading(true);
-    setTimeout(() => {
-      const email = googleEmailInput.trim() || 'user@gmail.com';
-      const name = email.split('@')[0].toUpperCase();
-      saveConnectivityState({
-        googleAccount: {
-          connected: true,
-          email,
-          name: `${name} (Google)`,
-          photoURL: `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(email)}`,
-        },
-      });
+    try {
+      const codeData = await startGoogleDeviceAuth();
+      setDeviceAuthData(codeData);
+      setIsWaitingForApproval(true);
+
+      // Open prefilled URL in popup or new tab (user never has to type the code!)
+      const width = 500;
+      const height = 650;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      const popup = window.open(
+        codeData.prefilled_url,
+        'Google YouTube Sign In',
+        `width=${width},height=${height},left=${left},top=${top}`
+      );
+
+      // Start background polling
+      const pollInterval = (codeData.interval || 5) * 1000;
+      const timer = setInterval(async () => {
+        try {
+          const pollRes = await pollGoogleDeviceAuth(codeData.device_code);
+          if (pollRes.status === 'authenticated' && pollRes.user) {
+            clearInterval(timer);
+            setIsWaitingForApproval(false);
+            setDeviceAuthData(null);
+            if (popup && !popup.closed) popup.close();
+
+            saveConnectivityState({
+              googleAccount: {
+                connected: true,
+                email: pollRes.user.email,
+                name: pollRes.user.displayName,
+                photoURL: pollRes.user.photoURL,
+                handle: pollRes.user.handle,
+                isRealAccount: true,
+                authMethod: 'google',
+              },
+            });
+
+            setUserSession(pollRes.user, pollRes.tokens);
+
+            if (pollRes.likedSongs && pollRes.likedSongs.length > 0 && onImportPlaylist) {
+              await onImportPlaylist({
+                id: 'yt_liked_songs',
+                title: 'YouTube Liked Songs',
+                description: 'Synced from your real YouTube Music account',
+                artworkUrl: pollRes.user.photoURL,
+                tracks: pollRes.likedSongs,
+                trackCount: pollRes.likedSongs.length,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+              });
+            }
+
+            showToast(`Connected as ${pollRes.user.displayName}! Real YouTube Music account active.`);
+          } else if (pollRes.status === 'expired' || pollRes.status === 'denied') {
+            clearInterval(timer);
+            setIsWaitingForApproval(false);
+            setDeviceAuthData(null);
+            showToast('Google sign-in was cancelled or timed out.');
+          }
+        } catch (e) {
+          // ignore transient errors while polling
+        }
+      }, pollInterval);
+
+      // 10-minute timeout
+      setTimeout(() => {
+        clearInterval(timer);
+        setIsWaitingForApproval(false);
+      }, 10 * 60 * 1000);
+
+    } catch (err: any) {
+      showToast(err.message || 'Failed to start Google sign-in');
+    } finally {
       setIsGoogleLoading(false);
-      setGoogleEmailInput('');
-      showToast('Signed in with Google! Personalized recommendations enabled.');
-    }, 600);
+    }
   };
 
-  const handleGoogleDisconnect = () => {
+  // Connect via YouTube Channel / Handle
+  const handleConnectChannel = async () => {
+    if (!ytChannelInput.trim()) return;
+    setIsConnectingChannel(true);
+    try {
+      const res = await connectYouTubeChannel(ytChannelInput.trim());
+      if (res.user) {
+        saveConnectivityState({
+          googleAccount: {
+            connected: true,
+            email: res.user.email,
+            name: res.user.displayName,
+            photoURL: res.user.photoURL,
+            handle: res.user.handle,
+            channelId: res.user.channelId,
+            subscribers: res.user.subscribers,
+            isRealAccount: true,
+            authMethod: 'channel',
+          },
+        });
+        setUserSession(res.user);
+        showToast(`Connected to real YouTube channel "${res.user.displayName}" (${res.user.handle})!`);
+        setYtChannelInput('');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Could not find YouTube channel.');
+    } finally {
+      setIsConnectingChannel(false);
+    }
+  };
+
+  // Connect via YouTube Music Cookie
+  const handleConnectCookie = async () => {
+    if (!ytCookieInput.trim()) return;
+    setIsConnectingCookie(true);
+    try {
+      const res = await connectYouTubeCookie(ytCookieInput.trim());
+      if (res.user) {
+        saveConnectivityState({
+          googleAccount: {
+            connected: true,
+            email: res.user.email,
+            name: res.user.displayName,
+            photoURL: res.user.photoURL,
+            handle: res.user.handle,
+            isRealAccount: true,
+            authMethod: 'cookie',
+          },
+        });
+        setUserSession(res.user);
+        if (res.likedSongs && res.likedSongs.length > 0 && onImportPlaylist) {
+          await onImportPlaylist({
+            id: 'yt_liked_songs',
+            title: 'YouTube Liked Songs',
+            description: 'Imported from your real YouTube Music account',
+            artworkUrl: res.user.photoURL,
+            tracks: res.likedSongs,
+            trackCount: res.likedSongs.length,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+        }
+        showToast(`Connected as ${res.user.displayName}! Synced ${res.likedSongs?.length || 0} Liked Songs.`);
+        setYtCookieInput('');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Invalid or expired YouTube Music cookie.');
+    } finally {
+      setIsConnectingCookie(false);
+    }
+  };
+
+  const handleGoogleDisconnect = async () => {
+    await signOutUser();
     saveConnectivityState({
       googleAccount: {
         connected: false,
         name: 'Anonymous Guest',
+        isRealAccount: false,
       },
     });
-    showToast('Signed out of Google account. Now running in anonymous mode.');
+    setDeviceAuthData(null);
+    setIsWaitingForApproval(false);
+    showToast('Signed out of YouTube Music account. Running in anonymous mode.');
+  };
+
+  const handleCopyCode = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+    showToast('Code copied to clipboard!');
   };
 
   // Spotify integration
@@ -350,25 +518,29 @@ export const ConnectivityModal: React.FC<ConnectivityModalProps> = ({
 
             {/* Content Body */}
             <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
-              {/* 1. GOOGLE ACCOUNT */}
+              {/* 1. REAL YOUTUBE MUSIC & GOOGLE ACCOUNT */}
               {(activeTab === 'all' || activeTab === 'accounts') && (
-                <section className="bg-white/[0.03] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-sm">
+                <section className="bg-white/[0.03] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-red-600/20 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0 shadow-md">
-                        <Globe className="w-5 h-5" />
+                      <div className="w-10 h-10 rounded-xl bg-red-600/20 border border-red-500/40 flex items-center justify-center text-red-500 shrink-0 shadow-md">
+                        <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                          <path d="M12 0C5.376 0 0 5.376 0 12s5.376 12 12 12 12-5.376 12-12S18.624 0 12 0zm0 19.104c-3.924 0-7.104-3.18-7.104-7.104S8.076 4.896 12 4.896s7.104 3.18 7.104 7.104-3.18 7.104-7.104 7.104zm0-11.832c-2.616 0-4.728 2.112-4.728 4.728S9.384 16.728 12 16.728s4.728-2.112 4.728-4.728S14.616 7.272 12 7.272zm-1.872 6.648V10.08l3.744 1.92-3.744 1.92z" />
+                        </svg>
                       </div>
                       <div>
                         <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                          <span>Google Account</span>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                            state.googleAccount.connected ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-neutral-800 text-neutral-400'
+                          <span>YouTube Music & Google Account</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            state.googleAccount.connected
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              : 'bg-neutral-800 text-neutral-400'
                           }`}>
-                            {state.googleAccount.connected ? 'Connected' : 'Anonymous Guest'}
+                            {state.googleAccount.connected ? 'Real Account Connected' : 'Guest Mode'}
                           </span>
                         </h3>
                         <p className="text-xs text-neutral-400 mt-0.5">
-                          Sign in with your Google account for personalized content.
+                          Sign in with your real Google account or connect your YouTube channel for personalized playlists & recommendations.
                         </p>
                       </div>
                     </div>
@@ -384,40 +556,197 @@ export const ConnectivityModal: React.FC<ConnectivityModalProps> = ({
                     )}
                   </div>
 
-                  {!state.googleAccount.connected ? (
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
-                      <input
-                        type="email"
-                        value={googleEmailInput}
-                        onChange={(e) => setGoogleEmailInput(e.target.value)}
-                        placeholder="Enter Google email (e.g. you@gmail.com)"
-                        className="flex-1 bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-cyan-500 transition"
-                      />
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={handleGoogleConnect}
-                        disabled={isGoogleLoading}
-                        className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md transition cursor-pointer disabled:opacity-50 shrink-0"
-                      >
-                        {isGoogleLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
-                        <span>Sign In with Google</span>
-                      </motion.button>
+                  {state.googleAccount.connected ? (
+                    /* CONNECTED STATE CARD */
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 bg-black/50 rounded-xl border border-white/10">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <img
+                          src={state.googleAccount.photoURL}
+                          alt=""
+                          className="w-10 h-10 rounded-full border-2 border-red-500/40 object-cover shadow"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-white truncate flex items-center gap-1.5">
+                            <span>{state.googleAccount.name}</span>
+                            <CheckCircle2 className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                          </p>
+                          <p className="text-[11px] text-neutral-400 truncate">
+                            {state.googleAccount.handle || state.googleAccount.email}
+                            {state.googleAccount.subscribers && ` • ${state.googleAccount.subscribers}`}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] text-emerald-400 font-bold px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/20">
+                          Personalized Library Active
+                        </span>
+                      </div>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-3 p-3 bg-black/40 rounded-xl border border-white/5">
-                      <img
-                        src={state.googleAccount.photoURL}
-                        alt=""
-                        className="w-8 h-8 rounded-full border border-white/20 object-cover"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-white truncate">{state.googleAccount.name}</p>
-                        <p className="text-[11px] text-neutral-400 truncate">{state.googleAccount.email}</p>
+                    /* NOT CONNECTED: 3 AUTH METHODS */
+                    <div className="space-y-3 pt-1">
+                      {/* Sub-tab selection */}
+                      <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10 text-xs">
+                        <button
+                          onClick={() => setAuthMethodTab('google')}
+                          className={`flex-1 py-1.5 px-2 rounded-lg font-medium transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                            authMethodTab === 'google' ? 'bg-red-600 text-white shadow' : 'text-neutral-400 hover:text-white'
+                          }`}
+                        >
+                          <Globe className="w-3.5 h-3.5" />
+                          <span>Google Sign-In</span>
+                        </button>
+                        <button
+                          onClick={() => setAuthMethodTab('channel')}
+                          className={`flex-1 py-1.5 px-2 rounded-lg font-medium transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                            authMethodTab === 'channel' ? 'bg-white/15 text-white shadow' : 'text-neutral-400 hover:text-white'
+                          }`}
+                        >
+                          <AtSign className="w-3.5 h-3.5" />
+                          <span>Channel Handle</span>
+                        </button>
+                        <button
+                          onClick={() => setAuthMethodTab('cookie')}
+                          className={`flex-1 py-1.5 px-2 rounded-lg font-medium transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                            authMethodTab === 'cookie' ? 'bg-white/15 text-white shadow' : 'text-neutral-400 hover:text-white'
+                          }`}
+                        >
+                          <Cookie className="w-3.5 h-3.5" />
+                          <span>Cookie Sync</span>
+                        </button>
                       </div>
-                      <span className="text-[10px] text-emerald-400 font-bold px-2 py-0.5 rounded-full bg-emerald-500/15">
-                        Personalized Feed Active
-                      </span>
+
+                      {/* TAB 1: 1-CLICK GOOGLE LOGIN */}
+                      {authMethodTab === 'google' && (
+                        <div className="bg-black/40 border border-white/5 rounded-xl p-3.5 space-y-3">
+                          {!isWaitingForApproval ? (
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                              <div className="space-y-0.5">
+                                <p className="text-xs font-semibold text-white">Direct Google / YouTube Login</p>
+                                <p className="text-[11px] text-neutral-400">
+                                  Opens the official Google window with pre-filled authorization to connect your real account.
+                                </p>
+                              </div>
+                              <motion.button
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.98 }}
+                                onClick={handleStartGoogleLogin}
+                                disabled={isGoogleLoading}
+                                className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition cursor-pointer disabled:opacity-50 shrink-0"
+                              >
+                                {isGoogleLoading ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                                    <path d="M12 0C5.376 0 0 5.376 0 12s5.376 12 12 12 12-5.376 12-12S18.624 0 12 0zm0 19.104c-3.924 0-7.104-3.18-7.104-7.104S8.076 4.896 12 4.896s7.104 3.18 7.104 7.104-3.18 7.104-7.104 7.104zm0-11.832c-2.616 0-4.728 2.112-4.728 4.728S9.384 16.728 12 16.728s4.728-2.112 4.728-4.728S14.616 7.272 12 7.272zm-1.872 6.648V10.08l3.744 1.92-3.744 1.92z" />
+                                  </svg>
+                                )}
+                                <span>Sign In with Google Account</span>
+                              </motion.button>
+                            </div>
+                          ) : (
+                            <div className="space-y-3 py-1">
+                              <div className="flex items-center gap-2.5 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-2 rounded-xl">
+                                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                                <span>Waiting for Google approval... Please select your account and click Allow.</span>
+                              </div>
+
+                              {deviceAuthData && (
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 p-2.5 bg-black/60 rounded-xl border border-white/10 text-xs">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-neutral-400">Your prefilled code:</span>
+                                    <code className="font-mono font-bold text-white bg-white/10 px-2 py-0.5 rounded">
+                                      {deviceAuthData.user_code}
+                                    </code>
+                                    <button
+                                      onClick={() => handleCopyCode(deviceAuthData.user_code)}
+                                      className="text-neutral-400 hover:text-white p-1 rounded transition cursor-pointer"
+                                      title="Copy code"
+                                    >
+                                      {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                                    </button>
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                    <a
+                                      href={deviceAuthData.prefilled_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium text-xs flex items-center gap-1.5 transition cursor-pointer"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                      <span>Re-open Google Window</span>
+                                    </a>
+                                    <button
+                                      onClick={() => setIsWaitingForApproval(false)}
+                                      className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-neutral-400 hover:text-white text-xs transition cursor-pointer"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* TAB 2: CONNECT VIA CHANNEL HANDLE */}
+                      {authMethodTab === 'channel' && (
+                        <div className="bg-black/40 border border-white/5 rounded-xl p-3.5 space-y-2">
+                          <p className="text-[11px] text-neutral-400">
+                            Connect your public YouTube profile, channel avatar, and playlists with zero login credentials.
+                          </p>
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                            <input
+                              type="text"
+                              value={ytChannelInput}
+                              onChange={(e) => setYtChannelInput(e.target.value)}
+                              placeholder="Enter YouTube @handle, name, or URL (e.g. @Alanwalkermusic)"
+                              className="flex-1 bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-red-500 transition"
+                            />
+                            <motion.button
+                              whileHover={{ scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                              onClick={handleConnectChannel}
+                              disabled={isConnectingChannel || !ytChannelInput.trim()}
+                              className="px-4 py-2 rounded-xl bg-white/15 hover:bg-white/20 text-white font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50 shrink-0"
+                            >
+                              {isConnectingChannel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <AtSign className="w-3.5 h-3.5" />}
+                              <span>Connect Channel</span>
+                            </motion.button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* TAB 3: CONNECT VIA COOKIE */}
+                      {authMethodTab === 'cookie' && (
+                        <div className="bg-black/40 border border-white/5 rounded-xl p-3.5 space-y-2">
+                          <p className="text-[11px] text-neutral-400">
+                            Paste your YouTube Music session cookie to instantly import your real <strong className="text-white">Liked Songs (`LM`)</strong> and private playlists into Celestial Music.
+                          </p>
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                            <input
+                              type="password"
+                              value={ytCookieInput}
+                              onChange={(e) => setYtCookieInput(e.target.value)}
+                              placeholder="Paste cookie string from music.youtube.com (includes SAPISID/LOGIN_INFO)"
+                              className="flex-1 bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-red-500 transition font-mono"
+                            />
+                            <motion.button
+                              whileHover={{ scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                              onClick={handleConnectCookie}
+                              disabled={isConnectingCookie || !ytCookieInput.trim()}
+                              className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow transition cursor-pointer disabled:opacity-50 shrink-0"
+                            >
+                              {isConnectingCookie ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Cookie className="w-3.5 h-3.5" />}
+                              <span>Sync Liked Songs</span>
+                            </motion.button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </section>
