@@ -194,7 +194,14 @@ export const AccountModal: React.FC<AccountModalProps> = ({
       }
     } catch (err: any) {
       console.error('Sign-in error:', err);
-      setSyncSuccessMsg(err.message || 'YouTube sign-in failed. Please try again.');
+      const errStr = String(err?.code || err?.message || '');
+      if (errStr.includes('unauthorized-domain')) {
+        setSyncSuccessMsg(
+          `Domain "${window.location.hostname}" needs to be added in Firebase Console → Authentication → Settings → Authorized domains. Or simply paste your YouTube or Spotify playlist link below to import without signing in!`
+        );
+      } else {
+        setSyncSuccessMsg(err.message || 'YouTube sign-in failed. Please try again.');
+      }
     } finally {
       setSigningIn(false);
     }
