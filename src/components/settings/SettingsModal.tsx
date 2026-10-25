@@ -47,6 +47,7 @@ import { GlassSwitch } from '../common/GlassSwitch';
 import { SourcesModal } from './SourcesModal';
 import { ReplayModal } from './ReplayModal';
 import { EqualizerModal } from './EqualizerModal';
+import { SpotifyImportModal } from './SpotifyImportModal';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -69,6 +70,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isSourcesOpen, setIsSourcesOpen] = useState(false);
   const [isReplayOpen, setIsReplayOpen] = useState(false);
   const [isAudioQualitySheetOpen, setIsAudioQualitySheetOpen] = useState(false);
+  const [isSpotifyImportOpen, setIsSpotifyImportOpen] = useState(false);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
   const [batteryState, setBatteryState] = useState<{ level: number; charging: boolean; supported: boolean }>({
     level: 100,
@@ -317,6 +319,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         checked={settings.exportCompatibleDownloads || false}
                         onChange={(val) => onUpdateSettings({ exportCompatibleDownloads: val })}
                       />
+                    </div>
+                  </div>
+                </div>
+
+                {/* SPOTIFY & PLAYLIST IMPORT */}
+                <div>
+                  <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider block mb-2 px-1">
+                    Playlists & Integration
+                  </span>
+                  <div className="bg-white/[0.03] rounded-2xl border border-white/10 divide-y divide-white/10 overflow-hidden shadow-sm">
+                    <div
+                      onClick={() => setIsSpotifyImportOpen(true)}
+                      className="p-3.5 flex items-center justify-between hover:bg-white/5 transition cursor-pointer group"
+                      id="spotify-import-option"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-[#1DB954]/20 border border-[#1DB954]/40 flex items-center justify-center text-[#1DB954] shadow-[0_0_12px_rgba(29,185,84,0.25)] shrink-0">
+                          <svg className="w-4.5 h-4.5 fill-current" viewBox="0 0 24 24">
+                            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.498 17.306c-.216.353-.674.467-1.027.252-2.815-1.72-6.358-2.109-10.533-1.155-.403.092-.803-.16-.895-.563-.092-.403.16-.803.563-.895 4.57-1.045 8.492-.601 11.64 1.334.353.216.467.674.252 1.027zm1.467-3.26c-.272.443-.849.585-1.292.313-3.223-1.981-8.136-2.553-11.948-1.396-.5.152-1.031-.133-1.183-.633-.152-.5.133-1.031.633-1.183 4.358-1.323 9.776-.684 13.477 1.591.443.272.585.849.313 1.292zm.126-3.41c-3.864-2.294-10.245-2.506-13.935-1.385-.593.18-1.222-.158-1.402-.751-.18-.593.158-1.222.751-1.402 4.24-1.287 11.285-1.038 15.727 1.598.533.316.708 1.008.392 1.541-.316.533-1.008.708-1.533.399z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-white group-hover:text-[#1DB954] transition">
+                              Import Playlist from Spotify
+                            </p>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[#1DB954]/20 text-[#1DB954] border border-[#1DB954]/30">
+                              NEW
+                            </span>
+                          </div>
+                          <p className="text-xs text-neutral-400">Import by link, URI, tracklist, or popular hits</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-white transition" />
                     </div>
                   </div>
                 </div>
@@ -1005,20 +1041,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
 
                     {/* Spotify import */}
-                    <div className="p-3.5 flex items-center justify-between" id="spotify-import-section">
+                    <div 
+                      onClick={() => setIsSpotifyImportOpen(true)}
+                      className="p-3.5 flex items-center justify-between hover:bg-white/5 transition cursor-pointer group" 
+                      id="spotify-import-section"
+                    >
                       <div className="flex items-center gap-3">
-                        <Disc3 className="w-4.5 h-4.5 text-neutral-400" />
+                        <div className="w-8 h-8 rounded-xl bg-[#1DB954]/20 border border-[#1DB954]/40 flex items-center justify-center text-[#1DB954] shadow-[0_0_12px_rgba(29,185,84,0.25)] shrink-0">
+                          <svg className="w-4.5 h-4.5 fill-current" viewBox="0 0 24 24">
+                            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.498 17.306c-.216.353-.674.467-1.027.252-2.815-1.72-6.358-2.109-10.533-1.155-.403.092-.803-.16-.895-.563-.092-.403.16-.803.563-.895 4.57-1.045 8.492-.601 11.64 1.334.353.216.467.674.252 1.027zm1.467-3.26c-.272.443-.849.585-1.292.313-3.223-1.981-8.136-2.553-11.948-1.396-.5.152-1.031-.133-1.183-.633-.152-.5.133-1.031.633-1.183 4.358-1.323 9.776-.684 13.477 1.591.443.272.585.849.313 1.292zm.126-3.41c-3.864-2.294-10.245-2.506-13.935-1.385-.593.18-1.222-.158-1.402-.751-.18-.593.158-1.222.751-1.402 4.24-1.287 11.285-1.038 15.727 1.598.533.316.708 1.008.392 1.541-.316.533-1.008.708-1.533.399z" />
+                          </svg>
+                        </div>
                         <div>
-                          <p className="text-sm font-medium text-white" id="spotify-status-text">Connect to Spotify</p>
-                          <p className="text-xs text-neutral-400" id="spotify-subtext">Import playlists and connect accounts</p>
+                          <p className="text-sm font-medium text-white group-hover:text-[#1DB954] transition" id="spotify-status-text">Import Playlist from Spotify</p>
+                          <p className="text-xs text-neutral-400" id="spotify-subtext">Import public playlists, albums or connect account</p>
                         </div>
                       </div>
                       <button
-                        onClick={() => window.open('/api/spotify/auth', '_blank')}
-                        className="px-2.5 py-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-medium shrink-0 transition text-[11px]"
-                        aria-label="Connect to Spotify"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsSpotifyImportOpen(true);
+                        }}
+                        className="px-2.5 py-1 rounded-xl bg-[#1DB954] hover:bg-[#1ed760] text-black font-semibold shrink-0 transition text-[11px] shadow-[0_0_10px_rgba(29,185,84,0.3)] cursor-pointer"
+                        aria-label="Import from Spotify"
                       >
-                        Connect
+                        Import
                       </button>
                     </div>
 
@@ -1186,6 +1233,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         onClose={() => setIsEqualizerOpen(false)}
         settings={settings}
         onUpdateSettings={onUpdateSettings}
+      />
+
+      <SpotifyImportModal
+        isOpen={isSpotifyImportOpen}
+        onClose={() => setIsSpotifyImportOpen(false)}
+        onSuccess={(title, count) => showToast(`Imported "${title}" (${count} tracks)!`)}
       />
     </>
   );
