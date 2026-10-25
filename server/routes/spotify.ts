@@ -195,19 +195,11 @@ spotifyRouter.get('/featured', (_req: Request, res: Response) => {
   res.json({ success: true, playlists: CURATED_SPOTIFY_PLAYLISTS });
 });
 
-// GET /api/spotify/auth - Initiate Spotify OAuth flow
+// GET /api/spotify/auth - Initiate Spotify OAuth flow or redirect to in-app importer
 spotifyRouter.get('/auth', (req: Request, res: Response) => {
   if (!spotifyClientId) {
-    return res.status(400).send(`
-      <html>
-        <body style="background:#09090b;color:#fff;font-family:sans-serif;padding:40px;text-align:center;">
-          <h2 style="color:#1DB954;">Spotify OAuth Configuration</h2>
-          <p>SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are not configured on this server.</p>
-          <p>You can import any Spotify playlist directly using its URL in the app without OAuth!</p>
-          <button onclick="window.close()" style="background:#1DB954;border:none;color:#fff;padding:10px 20px;border-radius:20px;cursor:pointer;font-weight:bold;margin-top:20px;">Close</button>
-        </body>
-      </html>
-    `);
+    // Seamlessly redirect back to the app with the Spotify Importer modal open
+    return res.redirect('/?spotify_import=1');
   }
   const authUrl = generateSpotifyAuthUrl();
   res.redirect(authUrl);

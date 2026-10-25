@@ -30,6 +30,7 @@ import { AccountModal } from './components/common/AccountModal';
 import { TrackContextMenu } from './components/common/TrackContextMenu';
 import { AddToPlaylistModal } from './components/common/AddToPlaylistModal';
 import { NewPlaylistModal } from './components/common/NewPlaylistModal';
+import { SpotifyImportModal } from './components/settings/SpotifyImportModal';
 import { subscribeToAuth } from './lib/firebase';
 import { ensureAccountScopeReady, onAccountScopeChange } from './services/accountScope';
 import { User } from 'firebase/auth';
@@ -49,7 +50,24 @@ export function App() {
   const [addToPlaylistSong, setAddToPlaylistSong] = useState<Song | null>(null);
   const [isNewPlaylistOpen, setIsNewPlaylistOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [isSpotifyImportOpen, setIsSpotifyImportOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    // Check if user came with ?spotify_import=1 or #spotify-import
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('spotify_import') || params.get('import') === 'spotify' || window.location.hash === '#spotify-import') {
+        setIsSpotifyImportOpen(true);
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, '', cleanUrl);
+      }
+    } catch {}
+
+    const handleOpenSpotify = () => setIsSpotifyImportOpen(true);
+    window.addEventListener('celestial-open-spotify-import', handleOpenSpotify);
+    return () => window.removeEventListener('celestial-open-spotify-import', handleOpenSpotify);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = subscribeToAuth((currentUser) => {
@@ -661,6 +679,12 @@ export function App() {
             setAddToPlaylistSong(null);
           }
         }}
+      />
+
+      {/* Spotify Import Modal */}
+      <SpotifyImportModal
+        isOpen={isSpotifyImportOpen}
+        onClose={() => setIsSpotifyImportOpen(false)}
       />
 
       {/* Keyboard Shortcut Guide */}
