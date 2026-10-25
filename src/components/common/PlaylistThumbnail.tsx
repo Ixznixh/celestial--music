@@ -58,9 +58,9 @@ export const PlaylistThumbnail: React.FC<PlaylistThumbnailProps> = ({
             </div>
           ))}
         </div>
-      ) : artworkUrl && !imgError ? (
+      ) : (artworkUrl || (collageArtworks && collageArtworks.length > 0)) && !imgError ? (
         <ArtworkImage
-          src={artworkUrl}
+          src={artworkUrl || (collageArtworks && collageArtworks[0])}
           alt={title}
           size={size}
           rounded={rounded}

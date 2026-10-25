@@ -485,6 +485,7 @@ export const NowPlayingModal: React.FC<NowPlayingModalProps> = ({
                   src={currentSong.artworkUrl}
                   fallbackVideoId={currentSong.id}
                   alt={currentSong.title}
+                  artist={currentSong.artist}
                   rounded="rounded-3xl"
                   priority
                   className="w-full h-full border border-white/10 ring-1 ring-white/5 object-cover"

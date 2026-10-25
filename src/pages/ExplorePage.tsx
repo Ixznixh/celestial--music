@@ -189,7 +189,8 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({
                   </span>
                   <ArtworkImage
                     src={song.artworkUrl}
-                    alt=""
+                    alt={song.title}
+                    artist={song.artist}
                     size="small"
                     className="w-11 h-11 rounded-xl object-cover shrink-0"
                   />

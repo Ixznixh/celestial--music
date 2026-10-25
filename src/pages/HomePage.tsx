@@ -584,6 +584,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                           src={song.artworkUrl}
                           fallbackVideoId={song.id}
                           alt={song.title}
+                          artist={song.artist}
                           rounded="rounded-md"
                           size="small"
                           className="w-9 h-9 shrink-0 object-cover"
@@ -745,6 +746,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                           src={song.artworkUrl}
                           fallbackVideoId={song.id}
                           alt={song.title}
+                          artist={song.artist}
                           rounded="rounded-xl"
                           className="w-full aspect-square object-cover"
                         />

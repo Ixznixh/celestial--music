@@ -222,6 +222,7 @@ export const QueueView: React.FC<QueueViewProps> = ({
               <ArtworkImage
                 src={currentSong.artworkUrl}
                 alt={currentSong.title}
+                artist={currentSong.artist}
                 size="small"
                 className="w-12 h-12 rounded-lg shrink-0 shadow-md border border-white/10 object-cover"
                 fallbackVideoId={currentSong.id}
@@ -338,6 +339,7 @@ export const QueueView: React.FC<QueueViewProps> = ({
                     <ArtworkImage
                       src={song.artworkUrl}
                       alt={song.title}
+                      artist={song.artist}
                       size="small"
                       className="w-12 h-12 rounded-lg shrink-0 shadow-sm border border-white/5 object-cover bg-neutral-900"
                       fallbackVideoId={song.id}
@@ -417,6 +419,7 @@ export const QueueView: React.FC<QueueViewProps> = ({
                         <ArtworkImage
                           src={song.artworkUrl}
                           alt={song.title}
+                          artist={song.artist}
                           size="small"
                           className="w-10 h-10 rounded-lg shrink-0 object-cover opacity-80"
                           fallbackVideoId={song.id}

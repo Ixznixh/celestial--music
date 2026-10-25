@@ -154,6 +154,7 @@ export const ArtistPage: React.FC<ArtistPageProps> = ({
                 <ArtworkImage
                   src={song.artworkUrl}
                   alt={song.title}
+                  artist={song.artist || artist.name}
                   size="small"
                   className="w-11 h-11 rounded-lg shrink-0 shadow-sm"
                 />
