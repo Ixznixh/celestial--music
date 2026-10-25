@@ -28,7 +28,7 @@ export const AuthButton: React.FC<AuthButtonProps> = ({ onOpenAccountModal }) =>
   const handleSignIn = async () => {
     try {
       setSigningIn(true);
-      await signInWithGoogle();
+      await signInWithYouTube();
       if (onOpenAccountModal) {
         onOpenAccountModal();
       }

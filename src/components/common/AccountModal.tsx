@@ -76,19 +76,6 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
   const [signingIn, setSigningIn] = useState(false);
   const [ytUsernameInput, setYtUsernameInput] = useState('');
-  const [authMode, setAuthMode] = useState<'google' | 'channel' | 'cookie' | 'quick'>('google');
-  const [deviceCodeData, setDeviceCodeData] = useState<{
-    user_code: string;
-    verification_url: string;
-    device_code: string;
-    expires_in: number;
-    interval: number;
-  } | null>(null);
-  const [isStartingGoogleAuth, setIsStartingGoogleAuth] = useState(false);
-  const [isPollingGoogleAuth, setIsPollingGoogleAuth] = useState(false);
-  const [copiedCode, setCopiedCode] = useState(false);
-  const [channelInput, setChannelInput] = useState('');
-  const [cookieInput, setCookieInput] = useState('');
   const [cachedTrackCount, setCachedTrackCount] = useState<number>(0);
   const [tabDirection, setTabDirection] = useState<number>(1);
   const [offlineBackupEnabled, setOfflineBackupEnabled] = useState(false);
@@ -204,112 +191,43 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   const handleSignIn = async (customName?: string) => {
     try {
       setSigningIn(true);
-      const chosenName = (customName || ytUsernameInput).trim() || 'YouTube Music Listener';
-      const handle = chosenName.startsWith('@') ? chosenName : `@${chosenName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'music'}`;
+      setSyncSuccessMsg(null);
+      const chosenInput = (customName || ytUsernameInput).trim();
+
+      // If user typed a handle or channel name, try connecting real YouTube channel profile
+      if (chosenInput) {
+        try {
+          const res = await connectWithYouTubeChannel(chosenInput);
+          if (res.user) {
+            setSyncSuccessMsg(`Connected as ${res.user.displayName}! Real YouTube profile active.`);
+            try {
+              const tracks = await fetchYouTubeLikedSongs();
+              if (tracks.length > 0 && onImportSongsToFavorites) {
+                onImportSongsToFavorites(tracks);
+              }
+            } catch {}
+            return;
+          }
+        } catch (e) {
+          // If channel resolution failed, continue with direct sign-in with chosen name
+        }
+      }
+
+      // Direct instant sign-in
+      const displayName = chosenInput ? chosenInput.replace(/^@/, '') : 'YouTube Music Listener';
+      const handle = chosenInput
+        ? (chosenInput.startsWith('@') ? chosenInput : `@${chosenInput.toLowerCase().replace(/[^a-z0-9]/g, '')}`)
+        : '@ytmusic_listener';
 
       const res = await signInWithYouTube({
-        displayName: chosenName.replace(/^@/, '') || 'YouTube Listener',
+        displayName,
         handle,
       });
 
       const user = res.user;
-      setSyncSuccessMsg(`Connected as ${user?.displayName || handle}! Library is active.`);
+      setSyncSuccessMsg(`Signed in as ${user?.displayName || handle}! Library is active.`);
 
-      // If user typed a playlist or track URL, auto-import it immediately
-      if (ytUrlInput.trim()) {
-        try {
-          const result = await importYouTubePlaylistUrl(ytUrlInput);
-          if (result && result.tracks.length > 0) {
-            await onImportPlaylist(result.playlist);
-            setSyncSuccessMsg(`Connected as ${user?.displayName}! Imported "${result.playlist.title}" (${result.tracks.length} tracks).`);
-            setYtUrlInput('');
-          }
-        } catch {}
-      } else {
-        // Auto-fetch top trending / liked tracks
-        try {
-          const tracks = await fetchYouTubeLikedSongs();
-          if (tracks.length > 0) {
-            setYtLikedSongs(tracks);
-            if (onImportSongsToFavorites) {
-              onImportSongsToFavorites(tracks);
-            }
-          }
-        } catch {}
-      }
-    } catch (err: any) {
-      console.error('Sign-in error:', err);
-      setSyncSuccessMsg(err.message || 'YouTube sign-in failed. Please try again.');
-    } finally {
-      setSigningIn(false);
-    }
-  };
-
-  // Google Device Flow Polling
-  useEffect(() => {
-    if (!deviceCodeData || !isPollingGoogleAuth || user) return;
-
-    const intervalMs = Math.max((deviceCodeData.interval || 5) * 1000, 4000);
-    const pollTimer = setInterval(async () => {
-      try {
-        const res = await pollGoogleDeviceCode(deviceCodeData.device_code);
-        if (res.status === 'authenticated' && res.user) {
-          setIsPollingGoogleAuth(false);
-          setDeviceCodeData(null);
-          setSyncSuccessMsg(`Welcome, ${res.user.displayName}! Real YouTube account connected.`);
-          try {
-            const tracks = await fetchYouTubeLikedSongs();
-            if (tracks.length > 0 && onImportSongsToFavorites) {
-              onImportSongsToFavorites(tracks);
-            }
-          } catch {}
-        } else if (res.status === 'expired' || res.status === 'denied') {
-          setIsPollingGoogleAuth(false);
-          setDeviceCodeData(null);
-          setSyncSuccessMsg(
-            res.status === 'expired'
-              ? 'Activation code expired. Click to generate a new code.'
-              : 'Authorization was cancelled on Google.'
-          );
-        }
-      } catch (e) {
-        // Ignore temporary poll issues
-      }
-    }, intervalMs);
-
-    return () => clearInterval(pollTimer);
-  }, [deviceCodeData, isPollingGoogleAuth, user, onImportSongsToFavorites]);
-
-  const handleStartGoogleAuth = async () => {
-    try {
-      setIsStartingGoogleAuth(true);
-      setSyncSuccessMsg(null);
-      const data = await requestGoogleDeviceCode();
-      setDeviceCodeData(data);
-      setIsPollingGoogleAuth(true);
-    } catch (err: any) {
-      setSyncSuccessMsg(err.message || 'Failed to start Google sign-in');
-    } finally {
-      setIsStartingGoogleAuth(false);
-    }
-  };
-
-  const handleCopyCode = () => {
-    if (deviceCodeData?.user_code) {
-      navigator.clipboard.writeText(deviceCodeData.user_code);
-      setCopiedCode(true);
-      setTimeout(() => setCopiedCode(false), 2000);
-    }
-  };
-
-  const handleConnectChannel = async () => {
-    if (!channelInput.trim()) return;
-    try {
-      setSigningIn(true);
-      setSyncSuccessMsg(null);
-      const res = await connectWithYouTubeChannel(channelInput.trim());
-      setSyncSuccessMsg(`Connected as ${res.user.displayName}! Real YouTube channel profile loaded.`);
-      setChannelInput('');
+      // Auto-fetch top trending / liked tracks
       try {
         const tracks = await fetchYouTubeLikedSongs();
         if (tracks.length > 0 && onImportSongsToFavorites) {
@@ -317,27 +235,8 @@ export const AccountModal: React.FC<AccountModalProps> = ({
         }
       } catch {}
     } catch (err: any) {
-      setSyncSuccessMsg(err.message || 'Failed to connect YouTube channel');
-    } finally {
-      setSigningIn(false);
-    }
-  };
-
-  const handleConnectCookie = async () => {
-    if (!cookieInput.trim()) return;
-    try {
-      setSigningIn(true);
-      setSyncSuccessMsg(null);
-      const res = await connectWithYouTubeCookie(cookieInput.trim());
-      if (res.likedSongs && res.likedSongs.length > 0 && onImportSongsToFavorites) {
-        onImportSongsToFavorites(res.likedSongs);
-        setSyncSuccessMsg(`Connected as ${res.user.displayName}! Imported ${res.likedSongs.length} Liked Songs.`);
-      } else {
-        setSyncSuccessMsg(`Connected as ${res.user.displayName}! Real YouTube Music session active.`);
-      }
-      setCookieInput('');
-    } catch (err: any) {
-      setSyncSuccessMsg(err.message || 'Invalid or expired YouTube Music cookie');
+      console.error('Sign-in error:', err);
+      setSyncSuccessMsg(err.message || 'YouTube sign-in failed. Please try again.');
     } finally {
       setSigningIn(false);
     }
@@ -537,205 +436,53 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                 </motion.button>
               </div>
             ) : (
-              <div className="w-full space-y-3.5 p-1">
-                {/* Header */}
-                <div className="flex items-center justify-between text-left min-w-0">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-red-600/20 border border-red-500/30 flex items-center justify-center text-red-500 shrink-0 shadow-[0_0_15px_rgba(239,68,68,0.25)]">
-                      <Youtube className="w-5 h-5 fill-current" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5">
-                        <span>Connect Real YouTube Music Account</span>
-                      </h3>
-                      <p className="text-[11px] text-neutral-400 mt-0.5 truncate">
-                        Sync your real playlists, liked songs & channel
-                      </p>
-                    </div>
+              <div className="w-full space-y-3.5 p-2 sm:p-3">
+                <div className="flex items-center gap-3 text-left min-w-0">
+                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-red-600/20 border border-red-500/30 flex items-center justify-center text-red-500 shrink-0 shadow-[0_0_20px_rgba(239,68,68,0.3)]">
+                    <Youtube className="w-6 h-6 fill-current" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-sm sm:text-base font-bold text-white">
+                      Sign in to YouTube Music
+                    </h3>
+                    <p className="text-xs text-neutral-400 mt-0.5">
+                      1-click connect to sync playlists, liked songs & your account
+                    </p>
                   </div>
                 </div>
 
-                {/* Sub-modes selector */}
-                <div className="flex items-center p-1 bg-black/40 border border-white/10 rounded-xl gap-1 text-[11px] font-medium">
-                  <button
-                    type="button"
-                    onClick={() => setAuthMode('google')}
-                    className={`flex-1 py-1.5 px-2 rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                      authMode === 'google'
-                        ? 'bg-red-600 text-white font-bold shadow-md shadow-red-900/40'
-                        : 'text-neutral-400 hover:text-white'
-                    }`}
+                <div className="space-y-3 pt-1">
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => handleSignIn()}
+                    disabled={signingIn}
+                    className="w-full py-3 px-5 rounded-2xl bg-gradient-to-r from-red-600 via-red-500 to-red-600 hover:from-red-500 hover:to-red-500 text-white font-bold text-sm flex items-center justify-center gap-2.5 shadow-[0_8px_25px_rgba(239,68,68,0.4)] transition cursor-pointer disabled:opacity-50"
                   >
-                    <Smartphone className="w-3.5 h-3.5" />
-                    <span>Google Sign-In</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAuthMode('channel')}
-                    className={`flex-1 py-1.5 px-2 rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                      authMode === 'channel'
-                        ? 'bg-white/15 text-white font-bold shadow-sm'
-                        : 'text-neutral-400 hover:text-white'
-                    }`}
-                  >
-                    <AtSign className="w-3.5 h-3.5" />
-                    <span>Channel Handle</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAuthMode('cookie')}
-                    className={`flex-1 py-1.5 px-2 rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                      authMode === 'cookie'
-                        ? 'bg-white/15 text-white font-bold shadow-sm'
-                        : 'text-neutral-400 hover:text-white'
-                    }`}
-                  >
-                    <Key className="w-3.5 h-3.5" />
-                    <span>YT Music Session</span>
-                  </button>
-                </div>
-
-                {/* MODE 1: Official Google Sign-In via Device Activation */}
-                {authMode === 'google' && (
-                  <div className="space-y-3 bg-white/[0.03] border border-white/10 rounded-2xl p-3.5">
-                    {!deviceCodeData ? (
-                      <div className="space-y-2.5 text-center py-1">
-                        <p className="text-xs text-neutral-300 leading-relaxed">
-                          Authorize Celestial with your real Google account via official Google Device sign-in. Works on any device without popup crashes.
-                        </p>
-                        <motion.button
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          onClick={handleStartGoogleAuth}
-                          disabled={isStartingGoogleAuth}
-                          className="w-full py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-red-900/40 transition cursor-pointer disabled:opacity-50"
-                        >
-                          {isStartingGoogleAuth ? (
-                            <>
-                              <Loader2 className="w-4 h-4 animate-spin text-white" />
-                              <span>Starting Google Activation...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Youtube className="w-4 h-4 fill-current" />
-                              <span>Start Google Sign-In</span>
-                            </>
-                          )}
-                        </motion.button>
-                      </div>
+                    {signingIn ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                        <span>Signing In...</span>
+                      </>
                     ) : (
-                      <div className="space-y-3">
-                        <div className="text-center space-y-1">
-                          <span className="text-[10px] uppercase font-bold tracking-wider text-red-400">
-                            Your Google Activation Code
-                          </span>
-                          <div className="flex items-center justify-center gap-2">
-                            <span className="font-mono text-xl sm:text-2xl font-black text-white tracking-widest bg-black/60 px-4 py-1.5 rounded-xl border border-red-500/40 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
-                              {deviceCodeData.user_code}
-                            </span>
-                            <motion.button
-                              whileHover={{ scale: 1.08 }}
-                              whileTap={{ scale: 0.92 }}
-                              onClick={handleCopyCode}
-                              className="p-2 rounded-xl bg-white/10 hover:bg-white/15 text-white border border-white/15 cursor-pointer"
-                              title="Copy Code"
-                            >
-                              {copiedCode ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                            </motion.button>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2 pt-1 text-xs text-neutral-300">
-                          <div className="flex items-start gap-2 text-[11px] bg-black/30 p-2.5 rounded-xl border border-white/5">
-                            <span className="w-4 h-4 rounded-full bg-red-600/30 text-red-400 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">1</span>
-                            <span>Click the button below to open Google Device Activation.</span>
-                          </div>
-                          <div className="flex items-start gap-2 text-[11px] bg-black/30 p-2.5 rounded-xl border border-white/5">
-                            <span className="w-4 h-4 rounded-full bg-red-600/30 text-red-400 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">2</span>
-                            <span>Enter code <strong className="text-white font-mono">{deviceCodeData.user_code}</strong> and click <strong>Allow</strong> with your YouTube account.</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 pt-1">
-                          <a
-                            href={deviceCodeData.verification_url || 'https://www.google.com/device'}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-red-900/40 transition cursor-pointer text-center"
-                          >
-                            <span>Open google.com/device</span>
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </a>
-                        </div>
-
-                        {/* Animated Waiting Poller */}
-                        <div className="flex items-center justify-center gap-2 text-[11px] text-neutral-400 pt-1">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-red-400" />
-                          <span>Waiting for your approval on Google...</span>
-                        </div>
-                      </div>
+                      <>
+                        <Youtube className="w-5 h-5 fill-current" />
+                        <span>Sign in with YouTube Music</span>
+                      </>
                     )}
-                  </div>
-                )}
+                  </motion.button>
 
-                {/* MODE 2: Channel Handle / URL Connect */}
-                {authMode === 'channel' && (
-                  <div className="space-y-2.5 bg-white/[0.03] border border-white/10 rounded-2xl p-3.5">
-                    <p className="text-[11px] text-neutral-400">
-                      Enter your YouTube Channel handle or URL to link your public playlists and profile avatar.
-                    </p>
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                      <div className="relative flex-1">
-                        <input
-                          type="text"
-                          value={channelInput}
-                          onChange={(e) => setChannelInput(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleConnectChannel()}
-                          placeholder="e.g. @yourchannel or youtube.com/@name"
-                          className="w-full bg-neutral-900 border border-white/15 rounded-xl py-2 px-3 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-red-500 transition"
-                        />
-                      </div>
-                      <motion.button
-                        whileHover={{ scale: 1.03 }}
-                        whileTap={{ scale: 0.97 }}
-                        onClick={handleConnectChannel}
-                        disabled={signingIn || !channelInput.trim()}
-                        className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md transition cursor-pointer disabled:opacity-40"
-                      >
-                        {signingIn ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <AtSign className="w-4 h-4" />}
-                        <span>Connect Channel</span>
-                      </motion.button>
-                    </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={ytUsernameInput}
+                      onChange={(e) => setYtUsernameInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSignIn()}
+                      placeholder="Optional: YouTube handle or channel name (e.g. @bubu)"
+                      className="w-full bg-neutral-900 border border-white/10 hover:border-white/20 rounded-xl py-2 px-3 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-red-500 transition"
+                    />
                   </div>
-                )}
-
-                {/* MODE 3: YouTube Music Session (Cookies) */}
-                {authMode === 'cookie' && (
-                  <div className="space-y-2.5 bg-white/[0.03] border border-white/10 rounded-2xl p-3.5">
-                    <p className="text-[11px] text-neutral-400 leading-relaxed">
-                      Paste your YouTube Music session cookie from <a href="https://music.youtube.com" target="_blank" rel="noopener noreferrer" className="text-red-400 underline">music.youtube.com</a> to import private Liked Songs (<code className="text-white text-[10px]">LM</code>) and full library.
-                    </p>
-                    <div className="space-y-2">
-                      <textarea
-                        value={cookieInput}
-                        onChange={(e) => setCookieInput(e.target.value)}
-                        placeholder="Paste your YouTube Music cookie (SAPISID=...; SID=... or full cookie header)"
-                        rows={2}
-                        className="w-full bg-neutral-900 border border-white/15 rounded-xl py-2 px-3 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-red-500 transition font-mono resize-none"
-                      />
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={handleConnectCookie}
-                        disabled={signingIn || !cookieInput.trim()}
-                        className="w-full py-2 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md transition cursor-pointer disabled:opacity-40"
-                      >
-                        {signingIn ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <Key className="w-4 h-4" />}
-                        <span>Connect Session Cookie</span>
-                      </motion.button>
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
             )}
           </div>
