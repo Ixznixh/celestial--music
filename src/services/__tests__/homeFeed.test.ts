@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { HomeSection, Song } from '../../types';
-import { composeHomeFeed, buildJumpBackIn, JUMP_BACK_IN_ID, isSongEntry } from '../homeFeed';
+import { composeHomeFeed, buildTopPlayed, buildJumpBackIn, TOP_PLAYED_ID, JUMP_BACK_IN_ID, isSongEntry } from '../homeFeed';
 import { deriveTasteProfile, emptyTasteProfile, TasteProfile } from '../tasteProfile';
 
 function makeSong(overrides: Partial<Song> & Pick<Song, 'id' | 'title'>): Song {
@@ -45,14 +45,39 @@ describe('composeHomeFeed', () => {
     ]);
   });
 
-  it('omits "Jump back in" shelf when there is history', () => {
+  it('includes "Top Played" shelf when there is history', () => {
     const recent = songs(5, 'recent');
     const sections = [makeSection('quick-picks', songs(4, 'qp'))];
 
     const composed = composeHomeFeed({ sections, profile: emptyTasteProfile(), recent });
 
     expect(composed[0].id).toBe('quick-picks');
-    expect(composed.some((s) => s.id === JUMP_BACK_IN_ID)).toBe(false);
+    expect(composed[1].id).toBe(TOP_PLAYED_ID);
+    expect(composed[1].title).toBe('Top Played');
+    expect(composed[1].subtitle).toBe('Your most played tracks on this device');
+  });
+
+  it('ranks Top Played shelf songs by play count descending', () => {
+    const songA = makeSong({ id: 's-a', title: 'Song A', artist: 'Artist 1' });
+    const songB = makeSong({ id: 's-b', title: 'Song B', artist: 'Artist 2' });
+    const songC = makeSong({ id: 's-c', title: 'Song C', artist: 'Artist 3' });
+    const recent = [songA, songB, songC];
+    const playStats = {
+      'song b:::artist 2': { count: 15, lastPlayedAt: 100 },
+      'song a:::artist 1': { count: 3, lastPlayedAt: 200 },
+      'song c:::artist 3': { count: 8, lastPlayedAt: 150 },
+    };
+
+    const composed = composeHomeFeed({
+      sections: [makeSection('quick-picks', songs(4, 'qp'))],
+      profile: emptyTasteProfile(),
+      recent,
+      playStats,
+    });
+
+    const topSection = composed.find((s) => s.id === TOP_PLAYED_ID);
+    expect(topSection).toBeDefined();
+    expect(topSection?.items.map((s: Song) => s.id)).toEqual(['s-b', 's-c', 's-a']);
   });
 
   it('keeps recently played songs out of other shelves when filtered', () => {
@@ -65,6 +90,7 @@ describe('composeHomeFeed', () => {
     const composed = composeHomeFeed({ sections, profile, recent });
 
     for (const section of composed) {
+      if (section.id === TOP_PLAYED_ID) continue;
       const titles = section.items.map((item: Song) => item.title);
       expect(titles).not.toContain('Just Played');
     }
@@ -120,12 +146,26 @@ describe('composeHomeFeed', () => {
   });
 });
 
-describe('buildJumpBackIn', () => {
-  it('returns null as Jump back in is removed', () => {
-    expect(buildJumpBackIn([])).toBeNull();
+describe('buildTopPlayed', () => {
+  it('returns null for empty recent history', () => {
+    expect(buildTopPlayed([])).toBeNull();
+  });
 
-    const duplicate = makeSong({ id: 'a', title: 'Same', artist: 'Artist' });
-    expect(buildJumpBackIn([duplicate, { ...duplicate, id: 'b' }])).toBeNull();
+  it('deduplicates and ranks by play count', () => {
+    const song1 = makeSong({ id: '1', title: 'Song 1', artist: 'Artist' });
+    const song2 = makeSong({ id: '2', title: 'Song 2', artist: 'Artist' });
+    const duplicate = makeSong({ id: 'dup', title: 'Song 1', artist: 'Artist' });
+
+    const shelf = buildTopPlayed([song1, duplicate, song2], {
+      'song 2:::artist': { count: 10, lastPlayedAt: 1 },
+      'song 1:::artist': { count: 2, lastPlayedAt: 2 },
+    });
+
+    expect(shelf).not.toBeNull();
+    expect(shelf?.id).toBe(TOP_PLAYED_ID);
+    expect(shelf?.title).toBe('Top Played');
+    expect(shelf?.subtitle).toBe('Your most played tracks on this device');
+    expect(shelf?.items.map((s: Song) => s.id)).toEqual(['2', '1']);
   });
 });
 

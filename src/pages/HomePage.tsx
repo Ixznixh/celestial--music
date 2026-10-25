@@ -5,7 +5,7 @@ import { usePlayer } from '../hooks/usePlayer';
 import { useLongPress } from '../hooks/useLongPress';
 import { ArtworkImage } from '../components/common/ArtworkImage';
 import { isDemoItem } from '../services/indexedDB';
-import { isUnknownTrack, emptyTasteProfile, loadTasteProfile, TasteProfile } from '../services/tasteProfile';
+import { isUnknownTrack, emptyTasteProfile, loadTasteProfile, TasteProfile, getPlayStats, PlayStats } from '../services/tasteProfile';
 import { composeHomeFeed } from '../services/homeFeed';
 import { ensureAccountScopeReady, onAccountScopeChange } from '../services/accountScope';
 import { User } from '../types';
@@ -122,6 +122,7 @@ export const HomePage: React.FC<HomePageProps> = ({
   const [lastSyncTime, setLastSyncTime] = useState<string>('Just now');
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<TasteProfile>(emptyTasteProfile);
+  const [playStats, setPlayStats] = useState<PlayStats>({});
 
   const lastFetchRef = useRef<number>(0);
   const sectionsCountRef = useRef<number>(0);
@@ -156,10 +157,12 @@ export const HomePage: React.FC<HomePageProps> = ({
 
     try {
       const provider = providerManager.getActiveProvider();
-      // Taste is read from this device only: the server receives a few artist names as
-      // search seeds and never any history, favourites or identifiers.
-      const taste = await loadTasteProfile();
+      const [taste, stats] = await Promise.all([
+        loadTasteProfile(),
+        getPlayStats(),
+      ]);
       setProfile(taste);
+      setPlayStats(stats);
 
       const moodParam = mood !== 'all' ? mood : undefined;
       const loadedSections = await provider.getHomeSections(forceRefresh, moodParam, taste.seedArtists);
@@ -249,6 +252,7 @@ export const HomePage: React.FC<HomePageProps> = ({
       setSections([]);
       sectionsCountRef.current = 0;
       setProfile(emptyTasteProfile());
+      setPlayStats({});
       setError(null);
       loadHomeData(true, activeMood);
     });
@@ -308,11 +312,11 @@ export const HomePage: React.FC<HomePageProps> = ({
     } else if ('releaseYear' in item && 'tracks' in item) {
       onPlayAlbum(item as Album);
     }
-  };  // Provider shelves composed with this device's history: Quick Picks first, "Jump back
-  // in" next, taste-seeded shelves after that, then anchors and this build's rotation.
+  };  // Provider shelves composed with this device's history: Quick Picks first, Top Played
+  // next, taste-seeded shelves after that, then anchors and this build's rotation.
   const feedSections = useMemo(
-    () => composeHomeFeed({ sections, profile, recent: recentlyPlayed }),
-    [sections, profile, recentlyPlayed]
+    () => composeHomeFeed({ sections, profile, recent: recentlyPlayed, playStats }),
+    [sections, profile, recentlyPlayed, playStats]
   );
 
   // Extract Quick Picks section if available
