@@ -88,7 +88,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
 
       {/* Navigation Tabs Pill selector */}
       <div className="flex gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-        {(['overview', 'playlists', 'songs', 'albums', 'artists', 'downloads'] as const).map((t) => (
+        {(['overview', 'downloads', 'playlists', 'songs', 'albums', 'artists'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -98,7 +98,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
                 : 'bg-white/[0.08] text-neutral-300 hover:bg-white/[0.14] hover:text-white border border-white/[0.04]'
             }`}
           >
-            <span>{t === 'overview' ? 'Overview' : t}</span>
+            <span>{t === 'overview' ? 'Overview' : t === 'downloads' ? 'Downloaded Songs' : t}</span>
             {t === 'downloads' && downloads.downloadCount > 0 && (
               <span className="text-[10px] tabular-nums opacity-80">{downloads.downloadCount}</span>
             )}
