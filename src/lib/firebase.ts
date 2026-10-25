@@ -36,6 +36,7 @@ export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({
   prompt: 'select_account',
 });
+googleProvider.addScope('https://www.googleapis.com/auth/youtube.readonly');
 
 // ============================================================
 // DIRECT YOUTUBE OAUTH (Firebase-independent)
@@ -317,6 +318,7 @@ export async function signInWithGoogle(): Promise<{ user: User; accessToken: str
 
     if (accessToken) {
       firebaseYoutubeAccessToken = accessToken;
+      setYouTubeAccessToken(accessToken);
       sessionStorage.setItem('yt_access_token', accessToken);
     }
 
