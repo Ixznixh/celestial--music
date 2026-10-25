@@ -28,6 +28,7 @@ import { db, isDemoItem } from '../services/indexedDB';
 import { bumpPlayCount } from '../services/tasteProfile';
 import { scheduleListeningSync } from '../services/accountScope';
 import { extractYouTubeVideoId, parseDurationInSeconds } from '../utils/formatters';
+import { isProperSongTrack } from '../utils/songFilter';
 import { diagnostics } from './PlaybackDiagnostics';
 import { backgroundAudioManager } from './BackgroundAudioManager';
 import { audioGraph, isIOS } from './AudioGraph';
@@ -1356,7 +1357,9 @@ export class AudioPlayer {
       const suggestions: Song[] = data.queue || [];
 
       if (Array.isArray(suggestions) && suggestions.length > 0) {
-        const filtered = suggestions.filter((s) => s.id !== targetId);
+        const filtered = suggestions
+          .filter((s) => s.id !== targetId)
+          .filter((s) => isProperSongTrack(s));
 
         if (force) {
           this.queueManager.setAutoplayQueue(filtered);

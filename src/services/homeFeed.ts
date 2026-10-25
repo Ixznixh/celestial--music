@@ -17,6 +17,7 @@ import {
   rankSongs,
   withoutRecentlyPlayed,
 } from './tasteProfile';
+import { isProperSongTrack } from '../utils/songFilter';
 
 export const JUMP_BACK_IN_ID = 'jump-back-in';
 export const QUICK_PICKS_ID = 'quick-picks';
@@ -34,7 +35,8 @@ export function isSongEntry(item: Song | Album | Playlist | Artist): item is Son
   return (
     typeof candidate.duration === 'number' &&
     typeof candidate.streamUrl === 'string' &&
-    Boolean(candidate.title)
+    Boolean(candidate.title) &&
+    isProperSongTrack(candidate)
   );
 }
 

@@ -9,6 +9,7 @@
  */
 
 import { Song, RepeatMode } from '../types';
+import { isProperSongTrack } from '../utils/songFilter';
 
 const STORAGE_QUEUE_KEY = 'luma_player_queue_v2';
 const STORAGE_USER_QUEUE_KEY = 'luma_player_user_queue';
@@ -207,7 +208,7 @@ export class QueueManager {
     const accepted: Song[] = [];
     for (const song of songs) {
       if (excludeIds.has(song.id)) continue;
-      if (!song.title) continue;
+      if (!song.title || !isProperSongTrack(song)) continue;
 
       // Filter out songs with titles similar to current song or existing queue tracks
       const isSimilar = existingTitles.some((t) => isSimilarTitle(song.title, t));
@@ -229,7 +230,7 @@ export class QueueManager {
     const newSongs: Song[] = [];
     for (const song of songs) {
       if (existingIds.has(song.id)) continue;
-      if (!song.title) continue;
+      if (!song.title || !isProperSongTrack(song)) continue;
 
       const isSimilar = existingTitles.some((t) => isSimilarTitle(song.title, t));
       if (isSimilar) continue;
@@ -248,6 +249,7 @@ export class QueueManager {
    * Spotify User Queue: User explicitly chose "Play Next"
    */
   public playNext(song: Song): void {
+    if (!isProperSongTrack(song)) return;
     // Remove if already in queue to avoid duplicates
     this.userQueue = this.userQueue.filter((s) => s.id !== song.id);
     this.contextQueue = this.contextQueue.filter((s) => s.id !== song.id);
@@ -261,6 +263,7 @@ export class QueueManager {
    * Spotify User Queue: User explicitly chose "Add to Queue"
    */
   public addToQueue(song: Song): void {
+    if (!isProperSongTrack(song)) return;
     this.userQueue = this.userQueue.filter((s) => s.id !== song.id);
     this.contextQueue = this.contextQueue.filter((s) => s.id !== song.id);
     this.autoplayQueue = this.autoplayQueue.filter((s) => s.id !== song.id);
@@ -283,28 +286,32 @@ export class QueueManager {
       return this.currentSong;
     }
 
-    let nextSong: Song | null = null;
-    if (this.userQueue.length > 0) {
-      nextSong = this.userQueue.shift()!;
-    } else if (this.contextQueue.length > 0) {
-      nextSong = this.contextQueue.shift()!;
-    } else if (this.autoplayQueue.length > 0) {
-      nextSong = this.autoplayQueue.shift()!;
-    }
-
-    if (nextSong) {
-      if (this.currentSong) {
-        this.history.push(this.currentSong);
-        if (this.history.length > 50) this.history.shift();
+    while (this.userQueue.length > 0 || this.contextQueue.length > 0 || this.autoplayQueue.length > 0) {
+      let candidate: Song | null = null;
+      if (this.userQueue.length > 0) {
+        candidate = this.userQueue.shift()!;
+      } else if (this.contextQueue.length > 0) {
+        candidate = this.contextQueue.shift()!;
+      } else if (this.autoplayQueue.length > 0) {
+        candidate = this.autoplayQueue.shift()!;
       }
-      this.currentSong = nextSong;
-      this.persistToStorage();
-      return this.currentSong;
+
+      if (candidate && isProperSongTrack(candidate)) {
+        if (this.currentSong) {
+          this.history.push(this.currentSong);
+          if (this.history.length > 50) this.history.shift();
+        }
+        this.currentSong = candidate;
+        this.persistToStorage();
+        return this.currentSong;
+      }
     }
 
     if (this.repeat === 'all' && this.history.length > 0) {
-      const all = [...this.history, ...(this.currentSong ? [this.currentSong] : [])];
-      return this.setQueue(all, 0);
+      const all = [...this.history, ...(this.currentSong ? [this.currentSong] : [])].filter(isProperSongTrack);
+      if (all.length > 0) {
+        return this.setQueue(all, 0);
+      }
     }
 
     return null;

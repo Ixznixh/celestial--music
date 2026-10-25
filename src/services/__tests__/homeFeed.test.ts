@@ -130,8 +130,13 @@ describe('buildJumpBackIn', () => {
 });
 
 describe('isSongEntry', () => {
-  it('accepts real songs and rejects albums or demo items', () => {
+  it('accepts real songs and rejects albums, demo items, jukeboxes, and compilations', () => {
     expect(isSongEntry(makeSong({ id: '1', title: 'Real' }))).toBe(true);
+    expect(isSongEntry(makeSong({ id: '2', title: 'Jukebox', duration: 2102 }))).toBe(false);
+    expect(isSongEntry(makeSong({ id: '3', title: 'Audio Jukebox', duration: 200 }))).toBe(false);
+    expect(isSongEntry(makeSong({ id: '4', title: 'Full Album Songs', duration: 200 }))).toBe(false);
+    expect(isSongEntry(makeSong({ id: '5', title: 'Long Mix', duration: 3600 }))).toBe(false);
+    expect(isSongEntry(makeSong({ id: '6', title: 'Short Snippet', duration: 15 }))).toBe(false);
     expect(
       isSongEntry({
         id: 'demo-1',

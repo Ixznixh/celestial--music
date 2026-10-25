@@ -15,28 +15,104 @@ import { jioSaavnService, isDirectPlayableCdnUrl, normalizeForMatch } from './ji
 Log.setLevel(Log.Level.NONE);
 
 /** Longest a single track can plausibly be; anything longer is a compilation upload. */
-const MAX_SONG_DURATION_SECONDS = 15 * 60;
+export const MAX_SONG_DURATION_SECONDS = 510; // 8 minutes 30 seconds
+export const MIN_SONG_DURATION_SECONDS = 30; // 30 seconds
+
+export const COMPILATION_PATTERNS: RegExp[] = [
+  /\bjukebox\b/i,
+  /\baudio\s*jukebox\b/i,
+  /\bvideo\s*jukebox\b/i,
+  /\bfull\s*album\b/i,
+  /\bentire\s*album\b/i,
+  /\bcomplete\s*album\b/i,
+  /\ball\s*songs\b/i,
+  /\bsongs?\s*collection\b/i,
+  /\baudio\s*collection\b/i,
+  /\bmegamix\b/i,
+  /\bmega\s*mix\b/i,
+  /\bnon[- ]?stop\b/i,
+  /\bcompilation\b/i,
+  /\bdiscography\b/i,
+  /\bbgm\s*collection\b/i,
+  /\btheme\s*collection\b/i,
+  /\bsoundtrack\s*collection\b/i,
+  /\bfull\s*ost\b/i,
+  /\bost\s*collection\b/i,
+  /\b\d+\s*(?:hours?|hrs?)\b/i,
+  /\bcontinuous\s*mix\b/i,
+  /\balbum\s*stream\b/i,
+  /\bcomplete\s*soundtrack\b/i,
+  /\ball\s*audio\s*songs\b/i,
+  /\ball\s*video\s*songs\b/i,
+  /\bmashup\b/i,
+];
 
 /**
  * Drops feed entries that are not individual songs.
  *
  * YouTube Music's search results mix real songs with jukebox compilations, playlists and
- * radio uploads that are shaped exactly like a song. They are 60-100 minutes long and can never
- * resolve to one track's audio, so they showed up as songs that refused to play.
+ * radio uploads that are shaped exactly like a song.
  */
 export function isPlayableSongEntry(
-  song: { title?: string; artist?: string; duration?: number } | null | undefined
+  song: { title?: string; artist?: string; album?: string; duration?: number } | null | undefined
 ): boolean {
   if (!song) return false;
 
   const title = String(song.title || '').trim();
-  if (!title) return false;
+  if (!title || title.toLowerCase() === 'unknown track') return false;
 
-  if (song.duration && song.duration > MAX_SONG_DURATION_SECONDS) return false;
+  // Strict Duration Check: Proper individual songs are between 30s and 8.5m
+  if (typeof song.duration === 'number' && song.duration > 0) {
+    if (song.duration < MIN_SONG_DURATION_SECONDS || song.duration > MAX_SONG_DURATION_SECONDS) {
+      return false;
+    }
+  }
 
-  if (/^(jukebox|music|songs|playlist|full album|mixtape|mashup)$/i.test(title)) return false;
-  if (/\b(music|songs|jukebox|playlist|full album|mixtape|mashup)\s*$/i.test(title)) return false;
-  if (/\b(music|songs|tv)\s*$/i.test(String(song.artist || '').trim())) return false;
+  // Exact single-word or short titles that are compilation labels
+  if (/^(jukebox|music|songs|playlist|full album|mixtape|mashup|all songs|audio jukebox|video jukebox)$/i.test(title)) {
+    return false;
+  }
+
+  // Ending keywords matching compilation format
+  if (/\b(music|songs|jukebox|playlist|full album|mixtape|mashup)\s*$/i.test(title)) {
+    return false;
+  }
+
+  // Check compilation patterns in title
+  for (const pattern of COMPILATION_PATTERNS) {
+    if (pattern.test(title)) {
+      if (/\bjukebox\b/i.test(pattern.source) && /\bjukebox\s+(?:hero|joints)\b/i.test(title)) {
+        continue;
+      }
+      return false;
+    }
+  }
+
+  // Check compilation patterns in album
+  const album = String(song.album || '').trim();
+  if (album) {
+    for (const pattern of COMPILATION_PATTERNS) {
+      if (pattern.test(album)) {
+        if (/\bjukebox\b/i.test(pattern.source) && /\bjukebox\s+(?:hero|joints)\b/i.test(album)) {
+          continue;
+        }
+        return false;
+      }
+    }
+  }
+
+  // "Best of <Artist>" compilation uploads (exclude individual songs: "Best of Me", "Best of You", etc.)
+  if (/\b(?:the\s+)?best\s+of\b/i.test(title) && !/\b(?:the\s+)?best\s+of\s+(?:me|you|us|both|my|mine|times|life|luck|it)\b/i.test(title)) {
+    return false;
+  }
+
+  const artist = String(song.artist || '').trim();
+  if (artist && /\b(jukebox|compilation|records\s*compilation|non[- ]?stop)\b/i.test(artist)) {
+    return false;
+  }
+  if (/\b(music|songs|tv)\s*$/i.test(artist)) {
+    return false;
+  }
 
   return true;
 }
@@ -821,6 +897,7 @@ class YouTubeMusicService {
 
     const pushSong = (item: any) => {
       const song = this.normalizeSong(item) as any;
+      if (!isPlayableSongEntry(song)) return;
       song._originalIndex = songs.length;
       songs.push(song);
     };
@@ -1058,7 +1135,7 @@ class YouTubeMusicService {
     } else if (mood === 'anirudh') {
       queries = [
         quickPicksQueryDef,
-        { id: 'anirudh-1', title: 'Anirudh Rockstar Hits', subtitle: 'Chart-topping viral tracks', query: 'Anirudh Ravichander all songs Tamil', type: 'song' },
+        { id: 'anirudh-1', title: 'Anirudh Rockstar Hits', subtitle: 'Chart-topping viral tracks', query: 'Anirudh Ravichander hit songs Tamil', type: 'song' },
         { id: 'anirudh-2', title: 'Anirudh Melodies & Love', subtitle: 'Emotional and soulful songs', query: 'Anirudh melody love songs Tamil', type: 'song' },
       ];
     } else if (mood === 'rahman') {
@@ -1431,7 +1508,8 @@ class YouTubeMusicService {
           try {
             const vids = await ch.getVideos();
             for (const item of (vids.videos || []).slice(0, 25)) {
-              popularSongs.push(this.normalizeSong(item));
+              const s = this.normalizeSong(item);
+              if (isPlayableSongEntry(s)) popularSongs.push(s);
             }
           } catch {}
 
@@ -1479,7 +1557,8 @@ class YouTubeMusicService {
 
         if (secTitle.includes('song') || secTitle.includes('popular') || secTitle.includes('top')) {
           for (const item of contents) {
-            popularSongs.push(this.normalizeSong(item));
+            const s = this.normalizeSong(item);
+            if (isPlayableSongEntry(s)) popularSongs.push(s);
           }
         } else if (secTitle.includes('album')) {
           for (const item of contents) {
@@ -1487,7 +1566,8 @@ class YouTubeMusicService {
           }
         } else if (secTitle.includes('single') || secTitle.includes('ep')) {
           for (const item of contents) {
-            singles.push(this.normalizeSong(item));
+            const s = this.normalizeSong(item);
+            if (isPlayableSongEntry(s)) singles.push(s);
           }
         } else if (secTitle.includes('similar') || secTitle.includes('fan') || secTitle.includes('related')) {
           for (const item of contents) {
@@ -1935,7 +2015,7 @@ class YouTubeMusicService {
         const rawUpNext = await yt.music.getUpNext(songId).catch(() => null);
         for (const item of (rawUpNext as any)?.contents || []) {
           const s = this.normalizeSong(item);
-          if (s.id && s.id !== songId && !s.id.startsWith('track-')) {
+          if (s.id && s.id !== songId && !s.id.startsWith('track-') && isPlayableSongEntry(s)) {
             s.genre = s.genre || this.detectSongGenre(s.title, s.artist);
             pool.push(s);
           }
@@ -1950,7 +2030,7 @@ class YouTubeMusicService {
           const artistRadio = await yt.music.search(`${curSong.artist} hit songs`, { type: 'song' }).catch(() => null);
           for (const item of (artistRadio as any)?.songs?.contents || []) {
             const s = this.normalizeSong(item);
-            if (s.id && s.id !== songId && !s.id.startsWith('track-')) {
+            if (s.id && s.id !== songId && !s.id.startsWith('track-') && isPlayableSongEntry(s)) {
               s.genre = s.genre || this.detectSongGenre(s.title, s.artist);
               pool.push(s);
             }
@@ -1965,7 +2045,7 @@ class YouTubeMusicService {
           if (info && info.watch_next_feed) {
             for (const item of info.watch_next_feed) {
               const s = this.normalizeSong(item);
-              if (s.id && s.id !== songId && !s.id.startsWith('track-')) {
+              if (s.id && s.id !== songId && !s.id.startsWith('track-') && isPlayableSongEntry(s)) {
                 s.genre = s.genre || this.detectSongGenre(s.title, s.artist);
                 pool.push(s);
               }
@@ -1984,6 +2064,7 @@ class YouTubeMusicService {
       for (const song of pool) {
         if (!song || !song.id || seenIds.has(song.id)) continue;
         if (!song.title || song.title === 'Unknown Track') continue;
+        if (!isPlayableSongEntry(song)) continue;
 
         const isDuplicateTitle = acceptedTitles.some((t) => isTitleTooSimilar(song.title, t));
         if (isDuplicateTitle) continue;

@@ -16,11 +16,16 @@ describe('Home feed — playable song filtering', () => {
     ).toBe(true);
   });
 
-  it('drops compilation uploads by length', () => {
-    // Real entries from the feed: 58, 100 and 109 minute jukebox uploads.
+  it('drops compilation uploads by length and keywords', () => {
+    // Real entries from the feed: 35 min, 58 min, 100 min and 109 min jukebox uploads
+    expect(isPlayableSongEntry({ title: 'Jukebox', artist: 'Anirudh', duration: 2102 })).toBe(false);
+    expect(isPlayableSongEntry({ title: 'Leo - Audio Jukebox', artist: 'Anirudh', duration: 2102 })).toBe(false);
+    expect(isPlayableSongEntry({ title: 'Jailer Full Album Songs', artist: 'Anirudh Ravichander', duration: 300 })).toBe(false);
     expect(isPlayableSongEntry({ title: 'Sean Roldan Songs', artist: 'Peru Enna Peru', duration: 3480 })).toBe(false);
     expect(isPlayableSongEntry({ title: '2026 Tamil Hits Songs', artist: 'Saravana Djoko', duration: 6037 })).toBe(false);
     expect(isPlayableSongEntry({ title: 'Jukebox', artist: 'Anirudh Ravichander', duration: 6572 })).toBe(false);
+    expect(isPlayableSongEntry({ title: 'Non Stop Tamil Hits', artist: 'Various', duration: 400 })).toBe(false);
+    expect(isPlayableSongEntry({ title: 'Short Snippet Ringtone', artist: 'Artist', duration: 18 })).toBe(false);
   });
 
   it('drops playlist-shaped titles and channel artist names', () => {
