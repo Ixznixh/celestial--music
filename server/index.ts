@@ -7,8 +7,8 @@ import { artistsRouter } from './routes/artists';
 import { playlistsRouter } from './routes/playlists';
 import { lyricsRouter } from './routes/lyrics';
 import { queueRouter } from './routes/queue';
-import { imageProxyRouter } from './routes/imageProxy';
-import { ytmusicRouter } from './routes/ytmusic';
+import { imageProxyRouter } from './routes/imageProxy';import { ytmusicRouter } from './routes/ytmusic';
+import { spotifyRouter } from './routes/spotify';
 import { youtubeMusicService } from './services/youtubeMusic';
 
 // Pre-warm Innertube engine at server startup for zero-latency instant playback.
@@ -17,8 +17,13 @@ import { youtubeMusicService } from './services/youtubeMusic';
 if (!process.env.VERCEL) {
   youtubeMusicService.getInnertube().catch(() => {});
 }
-
 export const apiRouter = Router();
+
+// Spotify integration routes
+apiRouter.use('/spotify', spotifyRouter);
+apiRouter.use('/spotify-auth', spotifyRouter);
+
+
 
 // Mount Dedicated YouTube Music API routes
 apiRouter.use('/ytmusic', ytmusicRouter);
