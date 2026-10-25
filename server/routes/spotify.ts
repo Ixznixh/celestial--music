@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { batchResolveArtworks } from '../services/thumbnailResolver';
 
 // Spotify OAuth configuration
 const spotifyClientId = process.env.SPOTIFY_CLIENT_ID || '';
@@ -124,11 +125,6 @@ export async function fetchPublicSpotifyPlaylist(urlOrId: string) {
     throw new Error('Spotify playlist not found or has no tracks.');
   }
 
-  const coverUrl =
-    entity.coverArt?.sources?.[0]?.url ||
-    entity.visualIdentity?.image?.[0]?.url ||
-    'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&q=80';
-
   const title = entity.title || entity.name || 'Spotify Playlist';
   const description =
     entity.subtitle ||
@@ -136,35 +132,62 @@ export async function fetchPublicSpotifyPlaylist(urlOrId: string) {
     `Imported from Spotify (${type === 'album' ? 'Album' : 'Playlist'})`;
 
   const rawTracks = Array.isArray(entity.trackList) ? entity.trackList : [];
-  const tracks = rawTracks.map((t: any, index: number) => {
+  
+  // Prepare items for fast concurrent artwork resolution
+  const trackItems = rawTracks.map((t: any, index: number) => {
     const rawTrackId = t.uri ? t.uri.replace('spotify:track:', '') : `track_${index}`;
     const artist =
       t.subtitle ||
       (Array.isArray(t.artists) ? t.artists.map((a: any) => a.name).join(', ') : '') ||
       'Unknown Artist';
     const trackTitle = t.title || t.name || 'Untitled Track';
-    const durationSec = Math.round((Number(t.duration) || 0) / 1000) || 200;
-    const trackArt = t.coverArt?.sources?.[0]?.url || coverUrl;
-
     return {
       id: `sp_${rawTrackId}`,
-      spotifyId: rawTrackId,
+      rawTrackId,
       title: trackTitle,
-      artist: artist,
-      album: title,
-      artworkUrl: trackArt,
-      duration: durationSec,
-      source: 'spotify',
+      artist,
+      durationSec: Math.round((Number(t.duration) || 0) / 1000) || 200,
+      spotifyArt: t.coverArt?.sources?.[0]?.url,
       audioPreviewUrl: t.audioPreview?.url,
     };
   });
+
+  // Resolve genuine album artwork for tracks (JioSaavn 500x500 CDN first, YouTube fallback)
+  const resolvedMap = await batchResolveArtworks(trackItems);
+
+  let initialCover =
+    entity.coverArt?.sources?.[0]?.url ||
+    entity.visualIdentity?.image?.[0]?.url;
+
+  const tracks = trackItems.map((item) => {
+    const resolvedArt = resolvedMap.get(item.id);
+    const trackArt = item.spotifyArt || resolvedArt || initialCover || '';
+
+    if (!initialCover && resolvedArt) {
+      initialCover = resolvedArt;
+    }
+
+    return {
+      id: item.id,
+      spotifyId: item.rawTrackId,
+      title: item.title,
+      artist: item.artist,
+      album: title,
+      artworkUrl: trackArt,
+      duration: item.durationSec,
+      source: 'spotify',
+      audioPreviewUrl: item.audioPreviewUrl,
+    };
+  });
+
+  const finalCoverUrl = initialCover || tracks[0]?.artworkUrl || '';
 
   return {
     id,
     type,
     title,
     description,
-    artworkUrl: coverUrl,
+    artworkUrl: finalCoverUrl,
     trackCount: tracks.length,
     tracks,
   };

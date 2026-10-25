@@ -3,6 +3,7 @@ import { Readable } from 'stream';
 import { youtubeMusicService } from '../services/youtubeMusic';
 import { generateMusicalWavBuffer, streamWavWithRangeSupport } from '../services/audioFallback';
 import { isDirectPlayableCdnUrl } from '../services/jioSaavnService';
+import { resolveTrackArtwork, batchResolveArtworks } from '../services/thumbnailResolver';
 
 export const songsRouter = Router();
 
@@ -403,4 +404,37 @@ songsRouter.get('/:id/prewarm', async (req: Request, res: Response) => {
     streamUrl: resolvedUrl,
     duration: resolvedDuration || durationHint,
   });
+});
+
+// GET /api/song/artwork?title=...&artist=...
+songsRouter.get('/artwork', async (req: Request, res: Response) => {
+  const title = String(req.query.title || '');
+  const artist = String(req.query.artist || '');
+  try {
+    const artworkUrl = await resolveTrackArtwork(title, artist);
+    if (artworkUrl) {
+      return res.json({ artworkUrl });
+    }
+    return res.status(404).json({ error: 'Artwork not found' });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/song/batch-artworks - body: { tracks: Array<{ id?: string, title: string, artist?: string }> }
+songsRouter.post('/batch-artworks', async (req: Request, res: Response) => {
+  const tracks = req.body?.tracks;
+  if (!Array.isArray(tracks)) {
+    return res.status(400).json({ error: 'Expected "tracks" array' });
+  }
+  try {
+    const map = await batchResolveArtworks(tracks);
+    const artworks: Record<string, string> = {};
+    for (const [k, v] of map.entries()) {
+      artworks[k] = v;
+    }
+    return res.json({ artworks });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
 });

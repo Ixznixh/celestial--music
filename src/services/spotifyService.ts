@@ -1,6 +1,7 @@
 import { Song, Playlist } from '../types';
 import { db } from './indexedDB';
 import { auth, syncPlaylistToFirestore } from '../lib/firebase';
+import { enrichPlaylistThumbnails } from './thumbnailEnricher';
 
 export interface SpotifyImportResult {
   playlist: Playlist;
@@ -112,10 +113,7 @@ export async function importSpotifyPlaylist(urlOrId: string): Promise<SpotifyImp
     const trackTitle = t.title || 'Untitled Track';
     const albumName = t.album || data.title || 'Spotify Playlist';
     const duration = Number(t.duration) || 180;
-    const artworkUrl =
-      t.artworkUrl ||
-      data.artworkUrl ||
-      'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&q=80';
+    const artworkUrl = t.artworkUrl || data.artworkUrl || '';
 
     return {
       id: rawTrackId,
@@ -135,14 +133,14 @@ export async function importSpotifyPlaylist(urlOrId: string): Promise<SpotifyImp
     new Set(cleanTracks.map((t) => t.artworkUrl).filter(Boolean))
   ).slice(0, 4);
 
-  const playlist: Playlist = {
+  let playlist: Playlist = {
     id: `spotify-pl-${data.id || Date.now()}`,
     title: data.title || 'Spotify Imported Playlist',
     description: data.description || 'Imported from Spotify',
     artworkUrl:
       data.artworkUrl ||
-      cleanTracks[0]?.artworkUrl ||
-      'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&q=80',
+      cleanTracks.find((t) => t.artworkUrl)?.artworkUrl ||
+      '',
     collageArtworks,
     trackCount: cleanTracks.length,
     totalDuration: cleanTracks.reduce((sum, t) => sum + (t.duration || 0), 0),
@@ -151,6 +149,14 @@ export async function importSpotifyPlaylist(urlOrId: string): Promise<SpotifyImp
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
+
+  // Automatically enrich missing thumbnails if any
+  try {
+    const enriched = await enrichPlaylistThumbnails(playlist);
+    if (enriched.updated) {
+      playlist = enriched.playlist;
+    }
+  } catch {}
 
   // 1. Save to local IndexedDB
   await db.savePlaylist(playlist);
