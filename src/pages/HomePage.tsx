@@ -353,22 +353,39 @@ export const HomePage: React.FC<HomePageProps> = ({
     }
   );
 
+  // Time-of-day greeting
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) return 'Good Morning';
+    if (hour >= 12 && hour < 17) return 'Good Afternoon';
+    if (hour >= 17 && hour < 21) return 'Good Evening';
+    return 'Good Night';
+  };
+  const greeting = getGreeting();
+  const greetingEmoji = greeting === 'Good Morning' ? '☀️' : greeting === 'Good Afternoon' ? '🎵' : greeting === 'Good Evening' ? '🌅' : '🌙';
+
   return (
     <div 
       className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 select-none pt-2 sm:pt-4 space-y-6 sm:space-y-8 pb-36 md:pb-28"
     >
-      {/* Top Page Header */}
+      {/* Top Page Header with Time-of-Day Greeting */}
       <div className="flex items-center justify-between pt-1">
-        <div className="flex items-center gap-2 min-w-0">
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-            Listen Now
-          </h1>
-          {isRefreshing && (
-            <span className="flex items-center gap-1 text-[10px] font-semibold text-neutral-400 uppercase tracking-wider shrink-0">
-              <RotateCw className="w-3 h-3 animate-spin" />
-              Updating
-            </span>
-          )}
+        <div className="flex flex-col min-w-0">
+          <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-widest flex items-center gap-1">
+            <span>{greetingEmoji}</span>
+            <span>{greeting}{user?.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}</span>
+          </span>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+              Listen Now
+            </h1>
+            {isRefreshing && (
+              <span className="flex items-center gap-1 text-[10px] font-semibold text-neutral-400 uppercase tracking-wider shrink-0">
+                <RotateCw className="w-3 h-3 animate-spin" />
+                Updating
+              </span>
+            )}
+          </div>
         </div>
         {onOpenAccountModal && (
           <button
@@ -447,24 +464,44 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       )}
 
-      {/* Loading Skeleton */}
+      {/* Loading Skeleton - Enhanced multi-section layout */}
       {isLoading && sections.length === 0 && (
-        <div className="space-y-4 pt-1">
+        <div className="space-y-6 pt-1">
+          {/* Quick Picks skeleton */}
           <div className="space-y-2">
-            <div className="h-3.5 w-28 bg-white/[0.06] rounded animate-pulse" />
-            <div className="h-5 w-40 bg-white/[0.1] rounded animate-pulse" />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {[1, 2, 3, 4].map((c) => (
-                <div key={c} className="flex items-center gap-2.5 p-1.5 bg-white/[0.04] rounded-lg animate-pulse">
-                  <div className="w-9 h-9 bg-white/[0.08] rounded-md" />
-                  <div className="flex-1 space-y-1">
-                    <div className="h-3 w-28 bg-white/[0.08] rounded" />
-                    <div className="h-2.5 w-16 bg-white/[0.05] rounded" />
-                  </div>
+            <div className="h-2.5 w-36 bg-white/[0.04] rounded animate-shimmer" />
+            <div className="h-5 w-28 bg-white/[0.08] rounded animate-pulse" />
+            <div className="flex gap-3 overflow-hidden">
+              {[0, 1].map((col) => (
+                <div key={col} className="w-[82vw] max-w-[290px] shrink-0 space-y-1.5">
+                  {[1, 2, 3, 4].map((r) => (
+                    <div key={r} className="flex items-center gap-2.5 p-1.5 bg-white/[0.03] rounded-lg">
+                      <div className="w-9 h-9 rounded-md bg-white/[0.07] animate-pulse shrink-0" />
+                      <div className="flex-1 space-y-1.5">
+                        <div className="h-2.5 bg-white/[0.07] rounded animate-pulse" style={{ width: `${55 + r * 10}%` }} />
+                        <div className="h-2 bg-white/[0.04] rounded animate-pulse" style={{ width: `${35 + r * 8}%` }} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
           </div>
+          {/* Card carousel skeletons */}
+          {[0, 1].map((sec) => (
+            <div key={sec} className="space-y-2.5">
+              <div className="h-5 bg-white/[0.08] rounded animate-pulse" style={{ width: `${120 + sec * 40}px` }} />
+              <div className="flex gap-2.5 overflow-hidden">
+                {[1, 2, 3, 4].map((c) => (
+                  <div key={c} className="w-32 sm:w-36 shrink-0 space-y-1.5">
+                    <div className="w-full aspect-square rounded-xl bg-white/[0.06] animate-pulse" />
+                    <div className="h-2.5 bg-white/[0.07] rounded animate-pulse" style={{ width: `${60 + c * 10}%` }} />
+                    <div className="h-2 bg-white/[0.04] rounded animate-pulse" style={{ width: `${40 + c * 8}%` }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

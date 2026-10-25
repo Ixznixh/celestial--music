@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Song, RepeatMode, LyricsLine, AppSettings } from '../../types';
 import { providerManager } from '../../services/providerManager';
 import { 
@@ -18,10 +18,10 @@ import {
   Mic2,
   Share2,
   Disc,
-  Sparkles,
   Sliders,
   Activity,
-  Info
+  Timer,
+  Gauge,
 } from 'lucide-react';
 import { motion, AnimatePresence, PanInfo } from 'motion/react';
 import { ArtworkImage } from '../common/ArtworkImage';
@@ -33,6 +33,10 @@ import { formatTime, formatRemainingTime } from '../../utils/formatters';
 import { useDominantColor } from '../../hooks/useDominantColor';
 import { FluidSlider } from '../common/FluidSlider';
 import { EqualizerModal } from '../settings/EqualizerModal';
+
+const SPEED_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+const SLEEP_TIMER_OPTIONS = [5, 10, 15, 20, 30, 45, 60]; // minutes
+
 
 interface NowPlayingModalProps {
   isOpen: boolean;
@@ -129,6 +133,59 @@ export const NowPlayingModal: React.FC<NowPlayingModalProps> = ({
   const [activeProviderId, setActiveProviderId] = useState('auto');
   const [providerName, setProviderName] = useState('LRCLIB (Auto)');
   const [showStatsForNerds, setShowStatsForNerds] = useState(settings.showStatsForNerds || false);
+
+  // Sleep Timer
+  const [sleepTimerMinutes, setSleepTimerMinutes] = useState<number | null>(null);
+  const [sleepTimerSecondsLeft, setSleepTimerSecondsLeft] = useState<number>(0);
+  const [showSleepPicker, setShowSleepPicker] = useState(false);
+  const sleepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startSleepTimer = useCallback((minutes: number) => {
+    if (sleepTimerRef.current) clearInterval(sleepTimerRef.current);
+    const totalSeconds = minutes * 60;
+    setSleepTimerMinutes(minutes);
+    setSleepTimerSecondsLeft(totalSeconds);
+    setShowSleepPicker(false);
+    sleepTimerRef.current = setInterval(() => {
+      setSleepTimerSecondsLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(sleepTimerRef.current!);
+          sleepTimerRef.current = null;
+          setSleepTimerMinutes(null);
+          // Pause playback
+          onTogglePlay();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, [onTogglePlay]);
+
+  const cancelSleepTimer = useCallback(() => {
+    if (sleepTimerRef.current) clearInterval(sleepTimerRef.current);
+    sleepTimerRef.current = null;
+    setSleepTimerMinutes(null);
+    setSleepTimerSecondsLeft(0);
+    setShowSleepPicker(false);
+  }, []);
+
+  useEffect(() => () => { if (sleepTimerRef.current) clearInterval(sleepTimerRef.current); }, []);
+
+  const formatSleepCountdown = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  // Playback Speed
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [showSpeedPicker, setShowSpeedPicker] = useState(false);
+
+  // Apply speed to audio element
+  useEffect(() => {
+    const audio = document.querySelector('audio') as HTMLAudioElement | null;
+    if (audio) audio.playbackRate = playbackSpeed;
+  }, [playbackSpeed]);
 
   // Fetch real synchronized lyrics from backend multi-provider engine when user views lyrics
   const fetchLyricsForCurrentSong = (providerId = activeProviderId) => {
@@ -739,13 +796,14 @@ export const NowPlayingModal: React.FC<NowPlayingModalProps> = ({
               </div>
             )}
 
-            {/* Footer Sub-actions: Lyrics, Audio Source, Queue */}
+            {/* Footer Sub-actions: Lyrics, Speed, Sleep Timer, Queue */}
             <div className="flex items-center justify-around pt-2 border-t border-white/5">
+              {/* Lyrics */}
               <motion.button
                 whileTap={{ scale: 0.92 }}
                 onClick={() => toggleTab('lyrics')}
                 aria-label="Toggle lyrics"
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition ${
                   activeTab === 'lyrics' ? 'bg-white text-black shadow-md' : 'text-neutral-400 hover:text-white hover:bg-white/10'
                 }`}
               >
@@ -753,32 +811,101 @@ export const NowPlayingModal: React.FC<NowPlayingModalProps> = ({
                 <span>Lyrics</span>
               </motion.button>
 
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.92 }}
-                onClick={() => {
-                  if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-                    try { navigator.vibrate(10); } catch {}
-                  }
-                  setIsAudioQualityOpen(true);
-                }}
-                aria-label="Open Audio Quality and Lossless Format Settings"
-                className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold text-white bg-white/10 hover:bg-white/20 border border-white/30 transition-all cursor-pointer shadow-[0_0_10px_rgba(255,255,255,0.18)] active:scale-95"
-              >
-                <Disc
-                  className={`w-3.5 h-3.5 text-white ${(settings.lowPowerMode || settings.reduceAnimation) ? '' : 'animate-spin'}`}
-                  style={{ animationDuration: isPlaying ? '3s' : '8s' }}
-                />
-                <span>
-                  {settings.audioQuality === 'hires' ? 'Hi-Res • 24-bit' : settings.audioQuality === 'high' ? 'High • 320k' : settings.audioQuality === 'normal' ? 'Standard • 160k' : 'Lossless • 24-bit'}
-                </span>
-              </motion.button>
+              {/* Playback Speed */}
+              <div className="relative">
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  onClick={() => { setShowSpeedPicker((p) => !p); setShowSleepPicker(false); }}
+                  aria-label="Playback speed"
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-bold transition ${
+                    playbackSpeed !== 1 ? 'bg-white text-black shadow-md' : 'text-neutral-400 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Gauge className="w-3.5 h-3.5" />
+                  <span>{playbackSpeed === 1 ? '1×' : `${playbackSpeed}×`}</span>
+                </motion.button>
+                <AnimatePresence>
+                  {showSpeedPicker && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-[#1c1c1e] border border-white/10 rounded-2xl shadow-2xl p-2 z-50 flex flex-col gap-1 min-w-[80px]"
+                    >
+                      {SPEED_STEPS.map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => { setPlaybackSpeed(s); setShowSpeedPicker(false); }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition text-center ${
+                            playbackSpeed === s ? 'bg-white text-black' : 'text-neutral-300 hover:bg-white/10'
+                          }`}
+                        >
+                          {s === 1 ? 'Normal' : `${s}×`}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
 
+              {/* Sleep Timer */}
+              <div className="relative">
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  onClick={() => { setShowSleepPicker((p) => !p); setShowSpeedPicker(false); }}
+                  aria-label="Sleep timer"
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-bold transition ${
+                    sleepTimerMinutes !== null ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'text-neutral-400 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Timer className="w-3.5 h-3.5" />
+                  {sleepTimerMinutes !== null ? (
+                    <span className="tabular-nums">{formatSleepCountdown(sleepTimerSecondsLeft)}</span>
+                  ) : (
+                    <span>Timer</span>
+                  )}
+                </motion.button>
+                <AnimatePresence>
+                  {showSleepPicker && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-[#1c1c1e] border border-white/10 rounded-2xl shadow-2xl p-2 z-50 flex flex-col gap-1 min-w-[110px]"
+                    >
+                      <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider px-2 pb-1">Stop after</p>
+                      {SLEEP_TIMER_OPTIONS.map((m) => (
+                        <button
+                          key={m}
+                          onClick={() => startSleepTimer(m)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                            sleepTimerMinutes === m ? 'bg-amber-500/20 text-amber-300' : 'text-neutral-300 hover:bg-white/10'
+                          }`}
+                        >
+                          {m} min
+                        </button>
+                      ))}
+                      {sleepTimerMinutes !== null && (
+                        <button
+                          onClick={cancelSleepTimer}
+                          className="px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-500/10 transition mt-1 border-t border-white/5 text-left"
+                        >
+                          Cancel timer
+                        </button>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Queue */}
               <motion.button
                 whileTap={{ scale: 0.92 }}
                 onClick={() => toggleTab('queue')}
                 aria-label="Toggle Queue"
-                className={`relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition ${
+                className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition ${
                   activeTab === 'queue' ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.4)]' : 'text-neutral-400 hover:text-white hover:bg-white/10'
                 }`}
               >
