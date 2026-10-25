@@ -25,6 +25,7 @@ export interface Song {
   accentColor?: string;
   trackNumber?: number;
   year?: number;
+  genre?: string;
 }
 
 export interface Artist {

@@ -15,10 +15,15 @@ import {
   RefreshCw,
   Play,
   HardDrive,
-  GripVertical
+  GripVertical,
+  Radio,
+  SlidersHorizontal,
+  Flame,
+  Music
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { ArtworkImage } from '../common/ArtworkImage';
+import { detectSongGenre, getGenreTheme } from '../../utils/genre';
 
 export interface QueueViewProps {
   queue: Song[];
@@ -67,15 +72,39 @@ export const QueueView: React.FC<QueueViewProps> = ({
   className = '',
 }) => {
   const [showHistory, setShowHistory] = useState<boolean>(false);
+  const [selectedGenreFilter, setSelectedGenreFilter] = useState<string>('all');
 
-  // Queue Partitioning:
-  // - History: tracks before current index
-  // - Now Playing: current track
-  // - Up Next: all upcoming tracks in exact fixed sequential order
+  // Spotify-style Queue Partitioning:
+  // - History: tracks played before current index
+  // - Now Playing: current track with genre badge
+  // - User Queue: explicitly queued tracks ("Add to queue" / "Play Next")
+  // - Radio / Autoplay Queue: genre-matched continuous queue
   const safeIndex = queueIndex >= 0 ? queueIndex : 0;
   const historyTracks = queue.slice(0, safeIndex);
   const upcomingTracks = queue.slice(safeIndex + 1);
   const totalUpcoming = upcomingTracks.length;
+
+  const nowPlayingGenre = currentSong ? detectSongGenre(currentSong) : 'Pop & Soundtracks';
+  const nowPlayingTheme = getGenreTheme(nowPlayingGenre);
+
+  // Differentiate user-added queue from Spotify-style radio suggestions
+  const hasUserQueue = Array.isArray(userQueue) && userQueue.length > 0;
+  const userQueueIds = new Set(userQueue.map((s) => s.id));
+  
+  const userUpcoming = hasUserQueue
+    ? upcomingTracks.filter((s) => userQueueIds.has(s.id))
+    : [];
+  const radioUpcoming = hasUserQueue
+    ? upcomingTracks.filter((s) => !userQueueIds.has(s.id))
+    : upcomingTracks;
+
+  // Filter radio tracks by genre if a genre chip is selected
+  const displayRadioTracks = selectedGenreFilter === 'all'
+    ? radioUpcoming
+    : radioUpcoming.filter((s) => detectSongGenre(s) === selectedGenreFilter);
+
+  // Available unique genres in upcoming queue for filter pills
+  const availableGenres: string[] = Array.from(new Set(upcomingTracks.map((s) => detectSongGenre(s))));
 
   const handleReorderUpcoming = (newUpcoming: Song[]) => {
     if (onSetUpcomingTracks) {
@@ -96,8 +125,11 @@ export const QueueView: React.FC<QueueViewProps> = ({
       {/* Sticky Header inside Queue View */}
       <div className="sticky top-0 z-20 flex items-center justify-between px-4 sm:px-6 py-3 bg-[#0a0a0c] border-b border-white/10 shrink-0">
         <div className="flex items-baseline gap-2 min-w-0">
-          <h3 className="text-lg sm:text-xl font-bold tracking-tight text-white truncate">
-            Up Next
+          <h3 className="text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-2 truncate">
+            <span>Queue</span>
+            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30">
+              Spotify Mode
+            </span>
           </h3>
           <span className="text-xs font-medium text-neutral-400 truncate">
             • {totalUpcoming} track{totalUpcoming === 1 ? '' : 's'}
@@ -112,7 +144,7 @@ export const QueueView: React.FC<QueueViewProps> = ({
               whileHover={{ scale: 1.04 }}
               onClick={onLoadMoreSuggestions}
               disabled={isLoadingSuggestions}
-              title="Add more suggestions to queue"
+              title="Add more genre-matched tracks"
               className="px-2.5 sm:px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-rose-300 font-medium flex items-center gap-1.5 transition disabled:opacity-50 shadow-sm cursor-pointer"
             >
               {isLoadingSuggestions ? (
@@ -153,15 +185,61 @@ export const QueueView: React.FC<QueueViewProps> = ({
         </div>
       </div>
 
-      {/* Scrollable Container with smooth momentum scrolling */}
+      {/* Spotify-style Genre & Mood Filter Bar */}
+      {availableGenres.length > 1 && (
+        <div className="flex items-center gap-1.5 px-4 sm:px-6 py-2 bg-black/60 border-b border-white/5 overflow-x-auto no-scrollbar shrink-0 text-xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1 shrink-0 mr-1">
+            <SlidersHorizontal className="w-3 h-3" />
+            Genre:
+          </span>
+
+          <button
+            onClick={() => setSelectedGenreFilter('all')}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium transition cursor-pointer shrink-0 ${
+              selectedGenreFilter === 'all'
+                ? 'bg-white text-black font-bold shadow'
+                : 'bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            All Tracks ({totalUpcoming})
+          </button>
+
+          {availableGenres.map((genre) => {
+            const theme = getGenreTheme(genre);
+            const isSelected = selectedGenreFilter === genre;
+            return (
+              <button
+                key={genre}
+                onClick={() => setSelectedGenreFilter(isSelected ? 'all' : genre)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium transition cursor-pointer shrink-0 flex items-center gap-1.5 border ${
+                  isSelected
+                    ? `${theme.bg} ${theme.color} ${theme.border} font-bold shadow-sm`
+                    : 'bg-white/5 text-neutral-400 hover:text-white border-transparent hover:bg-white/10'
+                }`}
+              >
+                <span>{theme.emoji}</span>
+                <span>{genre}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Scrollable Container */}
       <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-6 overscroll-contain">
-        {/* 1. NOW PLAYING CARD */}
+        {/* 1. NOW PLAYING CARD WITH GENRE BADGE */}
         {currentSong && (
           <div className="space-y-2">
             <div className="flex items-center justify-between px-1">
               <span className="text-[11px] font-bold uppercase tracking-widest text-rose-400 flex items-center gap-1.5">
                 <Music2 className="w-3.5 h-3.5" />
                 Now Playing
+              </span>
+
+              {/* Genre badge pill */}
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${nowPlayingTheme.bg} ${nowPlayingTheme.color} ${nowPlayingTheme.border} flex items-center gap-1 shadow-sm`}>
+                <span>{nowPlayingTheme.emoji}</span>
+                <span>{nowPlayingGenre}</span>
               </span>
             </div>
 
@@ -177,7 +255,7 @@ export const QueueView: React.FC<QueueViewProps> = ({
                 src={currentSong.artworkUrl}
                 alt={currentSong.title}
                 size="small"
-                className="w-13 h-13 sm:w-14 sm:h-14 rounded-xl shrink-0 shadow-lg border border-white/10"
+                className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl shrink-0 shadow-lg border border-white/10"
                 fallbackVideoId={currentSong.id}
               />
 
@@ -185,16 +263,16 @@ export const QueueView: React.FC<QueueViewProps> = ({
                 <p className="text-sm sm:text-base font-bold text-white truncate leading-tight">
                   {currentSong.title}
                 </p>
-                <p className="text-xs sm:text-sm text-neutral-300 truncate mt-1">
+                <p className="text-xs sm:text-sm text-neutral-300 truncate mt-0.5">
                   {currentSong.artist}
                 </p>
-                <div className="flex items-center gap-2 mt-1">
-                  <p className="text-[11px] text-neutral-500">
+                <div className="flex items-center gap-2 mt-1.5">
+                  <span className="text-[11px] text-neutral-400 font-mono">
                     {formatDuration(currentSong.duration)}
-                  </p>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-[10px] text-emerald-300 font-medium" title="Cached to IndexedDB for spotty connectivity playback">
-                    <HardDrive className="w-2.5 h-2.5 text-emerald-400" />
-                    IndexedDB Cached
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-[10px] text-emerald-300 font-medium">
+                    <Radio className="w-2.5 h-2.5 text-emerald-400 animate-pulse" />
+                    Spotify Song Radio
                   </span>
                 </div>
               </div>
@@ -232,30 +310,95 @@ export const QueueView: React.FC<QueueViewProps> = ({
               className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-medium"
             >
               <Loader2 className="w-4 h-4 animate-spin text-rose-400 shrink-0" />
-              <span>Adding new tracks to queue...</span>
+              <span>Fetching genre-matched tracks for {nowPlayingGenre}...</span>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* 2. UPCOMING QUEUE */}
+        {/* 2. NEXT IN QUEUE (USER QUEUED TRACKS) */}
+        {userUpcoming.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
+                <ListPlus className="w-3.5 h-3.5" />
+                Next In Queue ({userUpcoming.length})
+              </span>
+              {onClearUserQueue && (
+                <button
+                  onClick={onClearUserQueue}
+                  className="text-[11px] text-neutral-400 hover:text-rose-400 transition cursor-pointer"
+                >
+                  Clear Queue
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              {userUpcoming.map((song, i) => {
+                const genre = detectSongGenre(song);
+                const theme = getGenreTheme(genre);
+                return (
+                  <div
+                    key={`user-${song.id}-${i}`}
+                    className="flex items-center justify-between p-2 sm:p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/15 transition group"
+                  >
+                    <button
+                      onClick={() => onSelectTrack(song, safeIndex + 1 + i)}
+                      className="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer"
+                    >
+                      <ArtworkImage
+                        src={song.artworkUrl}
+                        alt={song.title}
+                        size="small"
+                        className="w-10 h-10 rounded-lg shrink-0 border border-white/10"
+                        fallbackVideoId={song.id}
+                      />
+                      <div className="min-w-0 flex-1 pr-2">
+                        <p className="text-sm font-semibold text-white truncate">{song.title}</p>
+                        <p className="text-xs text-neutral-400 truncate">{song.artist}</p>
+                      </div>
+                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${theme.bg} ${theme.color} ${theme.border} shrink-0 hidden sm:inline`}>
+                        {theme.emoji} {genre}
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => onRemoveTrack(safeIndex + 1 + i)}
+                      className="p-1.5 rounded-lg text-neutral-500 hover:text-rose-400 transition cursor-pointer"
+                      title="Remove from queue"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 3. NEXT FROM SONG RADIO (GENRE & MOOD MATCHED QUEUE) */}
         <div className="space-y-2.5">
           <div className="flex items-center justify-between px-1">
-            <span className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-              <ListPlus className="w-3.5 h-3.5 text-rose-400" />
-              Queue ({totalUpcoming})
-            </span>
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
+                <Radio className="w-3.5 h-3.5 text-rose-400" />
+                {currentSong ? `Next from: ${currentSong.artist} Radio` : 'Up Next'}
+              </span>
+              <p className="text-[11px] text-neutral-400 mt-0.5">
+                Playing songs with matching genre ({nowPlayingGenre})
+              </p>
+            </div>
           </div>
 
-          {upcomingTracks.length === 0 ? (
+          {displayRadioTracks.length === 0 ? (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               className="text-center py-10 px-4 rounded-2xl border border-dashed border-neutral-800 bg-neutral-900/40"
             >
               <Sparkles className="w-8 h-8 text-rose-400/70 mx-auto mb-2.5 animate-pulse" />
-              <p className="text-sm font-semibold text-neutral-200">No more tracks in queue</p>
+              <p className="text-sm font-semibold text-neutral-200">No tracks match "{selectedGenreFilter}"</p>
               <p className="text-xs text-neutral-500 mt-1 max-w-xs mx-auto">
-                When the current track finishes, new songs will automatically be added.
+                Select "All Tracks" or tap below to fetch more recommendations.
               </p>
               {onLoadMoreSuggestions && (
                 <motion.button
@@ -277,8 +420,10 @@ export const QueueView: React.FC<QueueViewProps> = ({
               onReorder={handleReorderUpcoming}
               className="space-y-1.5"
             >
-              {upcomingTracks.map((song, i) => {
+              {displayRadioTracks.map((song, i) => {
                 const effectiveIdx = safeIndex + 1 + i;
+                const genre = detectSongGenre(song);
+                const theme = getGenreTheme(genre);
 
                 return (
                   <Reorder.Item
@@ -313,17 +458,22 @@ export const QueueView: React.FC<QueueViewProps> = ({
                             {song.title}
                           </p>
                           {i === 0 && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-[10px] text-emerald-300 font-medium shrink-0" title="Next track cached to IndexedDB for spotty connectivity playback">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-[10px] text-emerald-300 font-medium shrink-0">
                               <HardDrive className="w-2.5 h-2.5 text-emerald-400" />
                               Next Cached
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-neutral-400 truncate">
-                          {song.artist}
-                        </p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <p className="text-xs text-neutral-400 truncate">
+                            {song.artist}
+                          </p>
+                          <span className={`text-[9px] font-semibold px-1.5 py-0.2 rounded-md border ${theme.bg} ${theme.color} ${theme.border} shrink-0`}>
+                            {theme.emoji} {genre}
+                          </span>
+                        </div>
                       </div>
-                      <span className="text-xs text-neutral-500 shrink-0 mr-2 hidden sm:inline">
+                      <span className="text-xs text-neutral-500 shrink-0 mr-2 hidden sm:inline font-mono">
                         {formatDuration(song.duration)}
                       </span>
                     </button>
@@ -382,7 +532,32 @@ export const QueueView: React.FC<QueueViewProps> = ({
           )}
         </div>
 
-        {/* 4. PREVIOUSLY PLAYED (Collapsible) */}
+        {/* 4. SPOTIFY CONTINUOUS SONG RADIO FOOTER */}
+        <div className="p-3.5 rounded-2xl bg-neutral-900/60 border border-white/5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+              <Radio className="w-4 h-4 animate-pulse" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-white">Continuous Song Radio Active</p>
+              <p className="text-[11px] text-neutral-400">
+                Automatically queueing songs matching {nowPlayingGenre}
+              </p>
+            </div>
+          </div>
+
+          {onLoadMoreSuggestions && (
+            <button
+              onClick={onLoadMoreSuggestions}
+              disabled={isLoadingSuggestions}
+              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-white font-medium transition cursor-pointer shrink-0"
+            >
+              Load More
+            </button>
+          )}
+        </div>
+
+        {/* 5. PREVIOUSLY PLAYED (Collapsible) */}
         {historyTracks.length > 0 && (
           <div className="pt-3 border-t border-white/5">
             <motion.button

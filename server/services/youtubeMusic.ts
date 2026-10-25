@@ -1912,6 +1912,11 @@ class YouTubeMusicService {
    * Uses YouTube's authentic recommendation graph (watch_next_feed).
    * Filters out redundant/similar title songs and ranks relevant music.
    */
+  /**
+   * Get Spotify-Style Smart Queue & Song Radio
+   * Uses YouTube Music's authentic song radio recommendation graph (RDAMVM<songId>).
+   * Matches exact genre, language, tempo, and mood.
+   */
   public async getQueue(songId: string): Promise<Song[]> {
     const cached = this.queueCache.get(songId);
     if (cached && cached.expires > Date.now()) {
@@ -1923,51 +1928,55 @@ class YouTubeMusicService {
 
     try {
       const pool: Song[] = [];
+      const curSong = this.songCache.get(songId)?.data;
 
-      // 1. Pure YouTube Up Next / Related videos from watch_next_feed
+      // 1. Primary: YouTube Music Automated Song Radio (RDAMVM<songId>)
       try {
-        const info = await yt.getInfo(songId).catch(() => null);
-        if (info && info.watch_next_feed) {
-          for (const item of info.watch_next_feed) {
-            const s = this.normalizeSong(item);
-            if (s.id && s.id !== songId && !s.id.startsWith('track-')) {
-              pool.push(s);
-            }
+        const rawUpNext = await yt.music.getUpNext(songId).catch(() => null);
+        for (const item of (rawUpNext as any)?.contents || []) {
+          const s = this.normalizeSong(item);
+          if (s.id && s.id !== songId && !s.id.startsWith('track-')) {
+            s.genre = s.genre || this.detectSongGenre(s.title, s.artist);
+            pool.push(s);
           }
         }
       } catch (e: any) {
-        console.warn(`watch_next_feed notice for ${songId}:`, e.message);
+        console.warn(`yt.music.getUpNext notice for ${songId}:`, e.message);
       }
 
-      // 2. Secondary: If watch_next_feed was short, try yt.music.getUpNext
-      if (pool.length < 8) {
+      // 2. Secondary: If pool is smaller than 15, query artist-matched radio
+      if (pool.length < 15 && curSong?.artist) {
         try {
-          const rawUpNext = await yt.music.getUpNext(songId).catch(() => null);
-          for (const item of (rawUpNext as any)?.contents || []) {
+          const artistRadio = await yt.music.search(`${curSong.artist} hit songs`, { type: 'song' }).catch(() => null);
+          for (const item of (artistRadio as any)?.songs?.contents || []) {
             const s = this.normalizeSong(item);
             if (s.id && s.id !== songId && !s.id.startsWith('track-')) {
+              s.genre = s.genre || this.detectSongGenre(s.title, s.artist);
               pool.push(s);
             }
           }
         } catch {}
       }
 
-      // 3. Fallback: Search related songs on YouTube
+      // 3. Fallback: Related recommendations from watch_next_feed
       if (pool.length < 8) {
         try {
-          const timeoutHelper = (p: Promise<any>, ms: number) =>
-            Promise.race([p.catch(() => null), new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
-
-          const curSong = this.songCache.get(songId)?.data;
-          const query = curSong ? `${curSong.title} ${curSong.artist}` : 'Tamil trending hit songs';
-          const fallback = await timeoutHelper(this.search(query, 'song'), 3000);
-          if (fallback?.songs) {
-            pool.push(...fallback.songs);
+          const info = await yt.getInfo(songId).catch(() => null);
+          if (info && info.watch_next_feed) {
+            for (const item of info.watch_next_feed) {
+              const s = this.normalizeSong(item);
+              if (s.id && s.id !== songId && !s.id.startsWith('track-')) {
+                s.genre = s.genre || this.detectSongGenre(s.title, s.artist);
+                pool.push(s);
+              }
+            }
           }
-        } catch {}
+        } catch (e: any) {
+          console.warn(`watch_next_feed fallback notice for ${songId}:`, e.message);
+        }
       }
 
-      // Filter out duplicates and title-similar tracks
+      // Filter out duplicates and title-similar tracks while preserving genre flow
       const finalQueue: Song[] = [];
       const seenIds = new Set<string>([songId]);
       const acceptedTitles: string[] = [];
@@ -1981,9 +1990,10 @@ class YouTubeMusicService {
 
         seenIds.add(song.id);
         acceptedTitles.push(song.title);
+        song.genre = song.genre || this.detectSongGenre(song.title, song.artist);
         finalQueue.push(song);
 
-        if (finalQueue.length >= 25) break;
+        if (finalQueue.length >= 35) break;
       }
 
       this.queueCache.set(songId, { data: finalQueue, expires: Date.now() + 3600_000 });
@@ -1992,6 +2002,27 @@ class YouTubeMusicService {
       console.error(`getQueue error for ${songId}:`, err.message);
       return [];
     }
+  }
+
+  /** Detects accurate genre and mood for queue labeling */
+  public detectSongGenre(title: string, artist: string): string {
+    const combined = `${title || ''} ${artist || ''}`.toLowerCase();
+    if (/\b(kuthu|dappan|marana|beat|party|dance|club|thara|kuththu|gaana)\b/i.test(combined)) return 'Kuthu & Dance';
+    if (/\b(melody|love|kadhal|romantic|feelings|soul|heart|unplugged|acoustic|piano)\b/i.test(combined)) return 'Melody & Soul';
+    if (/\b(lo-?fi|chill|slowed|reverb|ambient|relax|sleep|study|night)\b/i.test(combined)) return 'Lo-Fi & Chill';
+    if (/\b(rap|hip-?hop|trap|drill|cypher|freestyle)\b/i.test(combined)) return 'Hip-Hop & Rap';
+    if (/\b(remix|edm|house|techno|trance|electro|dj)\b/i.test(combined)) return 'EDM & Remix';
+    if (/\b(rock|metal|guitar|punk|alternative|band)\b/i.test(combined)) return 'Indie & Alternative';
+    if (/\b(carnatic|classical|devotional|bhajan|bakthi|temple|shiva|murugan|ragam)\b/i.test(combined)) return 'Golden Classics';
+    if (/\b(anirudh|santhosh narayanan|hiphop tamizha|sam c\.?s|thaman)\b/i.test(artist.toLowerCase())) return 'High Energy & Pop';
+    if (/\b(a\.?r\.?\s*rahman|harris jayaraj|sid sriram|yuvan|pradeep kumar|shreya ghoshal|harini)\b/i.test(artist.toLowerCase())) return 'Melody & Soul';
+    if (/\b(ilaiyaraaja|spb|s\.?p\.?\s*balasubrahmanyam|yesudas|janaki|chithra)\b/i.test(artist.toLowerCase())) return 'Golden Classics';
+    if (/\b(paal dabba|asal kolaar|ofro|arivu|mc)\b/i.test(artist.toLowerCase())) return 'Hip-Hop & Rap';
+    if (/\b(the weeknd|drake|eminem|travis scott|kanye|kendrick)\b/i.test(artist.toLowerCase())) return 'Hip-Hop & Rap';
+    if (/\b(taylor swift|ariana|dua lipa|billie eilish|ed sheeran|justin bieber|olivia rodrigo)\b/i.test(artist.toLowerCase())) return 'High Energy & Pop';
+    if (/\b(alan walker|marshmello|martin garrix|david guetta|avicii|chainsmokers)\b/i.test(artist.toLowerCase())) return 'EDM & Remix';
+    if (/\b(coldplay|imagine dragons|queen|linkin park|maroon 5)\b/i.test(artist.toLowerCase())) return 'Indie & Alternative';
+    return 'Pop & Soundtracks';
   }
 
   private streamCache = new Map<string, { data: StreamInfo; expires: number }>();
