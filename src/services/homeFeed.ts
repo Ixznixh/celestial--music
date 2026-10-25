@@ -42,21 +42,15 @@ function isQuickPicks(section: HomeSection): boolean {
   return section.id === QUICK_PICKS_ID || section.title.toLowerCase().includes('quick picks');
 }
 
-/** Recently played on this device — the one place they are allowed to reappear. */
-export function buildJumpBackIn(recent: Song[]): HomeSection | null {
-  const songs = (recent || []).filter(
-    (song): song is Song => Boolean(song) && !isDemoItem(song) && Boolean(song.id) && Boolean(song.title)
-  );
-  if (songs.length === 0) return null;
+function isJumpBackIn(section: HomeSection): boolean {
+  const t = (section.title || '').toLowerCase();
+  const id = (section.id || '').toLowerCase();
+  return id === JUMP_BACK_IN_ID || id.includes('jump_back') || id.includes('jump-back') || t.includes('jump back');
+}
 
-  const unique = dedupeSongs(songs, new Set());
-  return {
-    id: JUMP_BACK_IN_ID,
-    title: 'Jump back in',
-    subtitle: 'Recently played on this device',
-    type: 'song',
-    items: unique.slice(0, JUMP_BACK_IN_LIMIT),
-  };
+/** Jump back in shelf removed per user request */
+export function buildJumpBackIn(_recent: Song[]): HomeSection | null {
+  return null;
 }
 
 interface ComposeInput {
@@ -66,11 +60,11 @@ interface ComposeInput {
 }
 
 /**
- * Order of the finished feed: hero Quick Picks, then the listener's own history, then
- * taste-seeded shelves, then the anchors, then whatever rotated in this build.
+ * Order of the finished feed: hero Quick Picks, then taste-seeded shelves,
+ * then the anchors, then whatever rotated in this build. (Jump back in omitted).
  */
-export function composeHomeFeed({ sections, profile, recent }: ComposeInput): HomeSection[] {
-  const source = Array.isArray(sections) ? sections : [];
+export function composeHomeFeed({ sections, profile }: ComposeInput): HomeSection[] {
+  const source = (Array.isArray(sections) ? sections : []).filter((s) => !isJumpBackIn(s));
 
   const quickPicks = source.find(isQuickPicks);
   const personal = source.filter((section) => !isQuickPicks(section) && PERSONAL_SHELF_IDS.has(section.id));
@@ -80,8 +74,6 @@ export function composeHomeFeed({ sections, profile, recent }: ComposeInput): Ho
 
   const ordered: HomeSection[] = [];
   if (quickPicks) ordered.push(quickPicks);
-  const jumpBackIn = buildJumpBackIn(recent);
-  if (jumpBackIn) ordered.push(jumpBackIn);
   ordered.push(...personal, ...rest);
 
   const seen = new Set<string>();

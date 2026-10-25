@@ -319,7 +319,14 @@ export const HomePage: React.FC<HomePageProps> = ({
     (s) => s.id === 'quick-picks' || s.title.toLowerCase().includes('quick picks')
   );
 
-  const otherSections = feedSections.filter((s) => s !== quickPicksSection);
+  const otherSections = feedSections.filter(
+    (s) =>
+      s !== quickPicksSection &&
+      s.id !== 'jump-back-in' &&
+      !s.id.toLowerCase().includes('jump_back') &&
+      !s.id.toLowerCase().includes('jump-back') &&
+      !s.title.toLowerCase().includes('jump back')
+  );
 
   // Group quick picks into 4-song chunks for YouTube Music style swipeable columns
   const quickPicksSongs = (quickPicksSection?.items || []).filter(

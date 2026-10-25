@@ -45,18 +45,17 @@ describe('composeHomeFeed', () => {
     ]);
   });
 
-  it('adds "Jump back in" right after Quick Picks when there is history', () => {
+  it('omits "Jump back in" shelf when there is history', () => {
     const recent = songs(5, 'recent');
     const sections = [makeSection('quick-picks', songs(4, 'qp'))];
 
     const composed = composeHomeFeed({ sections, profile: emptyTasteProfile(), recent });
 
     expect(composed[0].id).toBe('quick-picks');
-    expect(composed[1].id).toBe(JUMP_BACK_IN_ID);
-    expect(composed[1].items).toHaveLength(5);
+    expect(composed.some((s) => s.id === JUMP_BACK_IN_ID)).toBe(false);
   });
 
-  it('keeps recently played songs out of every other shelf', () => {
+  it('keeps recently played songs out of other shelves when filtered', () => {
     const recent = [makeSong({ id: 'r1', title: 'Just Played', artist: 'Sid Sriram' })];
     const profile = deriveTasteProfile({ recent, favorites: [], playStats: {} });
 
@@ -67,11 +66,7 @@ describe('composeHomeFeed', () => {
 
     for (const section of composed) {
       const titles = section.items.map((item: Song) => item.title);
-      if (section.id === JUMP_BACK_IN_ID) {
-        expect(titles).toContain('Just Played');
-      } else {
-        expect(titles).not.toContain('Just Played');
-      }
+      expect(titles).not.toContain('Just Played');
     }
   });
 
@@ -126,14 +121,11 @@ describe('composeHomeFeed', () => {
 });
 
 describe('buildJumpBackIn', () => {
-  it('returns null without history and dedupes what it is given', () => {
+  it('returns null as Jump back in is removed', () => {
     expect(buildJumpBackIn([])).toBeNull();
 
     const duplicate = makeSong({ id: 'a', title: 'Same', artist: 'Artist' });
-    const section = buildJumpBackIn([duplicate, { ...duplicate, id: 'b' }]);
-
-    expect(section).not.toBeNull();
-    expect(section!.items).toHaveLength(1);
+    expect(buildJumpBackIn([duplicate, { ...duplicate, id: 'b' }])).toBeNull();
   });
 });
 
