@@ -26,14 +26,11 @@ import { SeeAllPage } from './pages/SeeAllPage';
 // Modals
 import { NowPlayingModal } from './components/player/NowPlayingModal';
 import { SettingsModal } from './components/settings/SettingsModal';
-import { AccountModal } from './components/common/AccountModal';
 import { TrackContextMenu } from './components/common/TrackContextMenu';
 import { AddToPlaylistModal } from './components/common/AddToPlaylistModal';
 import { NewPlaylistModal } from './components/common/NewPlaylistModal';
 import { SpotifyImportModal } from './components/settings/SpotifyImportModal';
-import { subscribeToAuth } from './lib/firebase';
 import { ensureAccountScopeReady, onAccountScopeChange } from './services/accountScope';
-import { User } from './types';
 
 export function App() {
   // Navigation stack
@@ -45,13 +42,11 @@ export function App() {
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
   const [isMiniPlayerDismissed, setIsMiniPlayerDismissed] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [contextMenuSong, setContextMenuSong] = useState<Song | null>(null);
   const [addToPlaylistSong, setAddToPlaylistSong] = useState<Song | null>(null);
   const [isNewPlaylistOpen, setIsNewPlaylistOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [isSpotifyImportOpen, setIsSpotifyImportOpen] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     // Check if user came with ?spotify_import=1 or #spotify-import
@@ -67,13 +62,6 @@ export function App() {
     const handleOpenSpotify = () => setIsSpotifyImportOpen(true);
     window.addEventListener('celestial-open-spotify-import', handleOpenSpotify);
     return () => window.removeEventListener('celestial-open-spotify-import', handleOpenSpotify);
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = subscribeToAuth((currentUser) => {
-      setUser(currentUser);
-    });
-    return () => unsubscribe();
   }, []);
 
   // Settings with all YouTube Music options
@@ -373,7 +361,6 @@ export function App() {
         currentView={currentView}
         onNavigateBack={navigateBack}
         onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenAccountModal={() => setIsAccountModalOpen(true)}
         onNavigate={navigateTo}
         title={getViewTitle()}
         lowPowerMode={settings.lowPowerMode}
@@ -402,8 +389,6 @@ export function App() {
                 isFavorite={library.isFavorite}
                 recentlyPlayed={library.recentlyPlayed}
                 favoriteSongs={library.favoriteSongs}
-                user={user}
-                onOpenAccountModal={() => setIsAccountModalOpen(true)}
                 settings={settings}
               />
             )}
@@ -615,23 +600,7 @@ export function App() {
         }}
       />
 
-      {/* Account Management & YouTube Sync Modal */}
-      <AccountModal
-        isOpen={isAccountModalOpen}
-        onClose={() => setIsAccountModalOpen(false)}
-        user={user}
-        favoriteSongs={library.favoriteSongs}
-        onImportPlaylist={library.importPlaylist}
-        onClearFavorites={library.clearFavorites}
-        onImportSongsToFavorites={async (songs) => {
-          for (const s of songs) {
-            if (!library.isFavorite(s.id)) {
-              await library.toggleFavorite(s);
-            }
-          }
-        }}
-        onPlaySong={handlePlaySong}
-      />
+
 
       {/* Track Overflow Context Menu */}
       {contextMenuSong && (

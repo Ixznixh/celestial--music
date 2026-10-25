@@ -16,15 +16,11 @@ const REFRESH_KEY = 'yt_direct_refresh_token';
 let currentUser: User | null = null;
 const authListeners = new Set<(user: User | null) => void>();
 
-// Load initial user session from localStorage
+// Always plain anonymous mode
+currentUser = null;
 try {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved) {
-    currentUser = JSON.parse(saved);
-  }
-} catch (e) {
-  console.warn('Failed to parse cached YouTube user profile:', e);
-}
+  localStorage.removeItem(STORAGE_KEY);
+} catch {}
 
 function notifyListeners() {
   for (const listener of authListeners) {

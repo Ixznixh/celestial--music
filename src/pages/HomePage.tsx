@@ -387,36 +387,7 @@ export const HomePage: React.FC<HomePageProps> = ({
             )}
           </div>
         </div>
-        {onOpenAccountModal && (
-          <button
-            onClick={onOpenAccountModal}
-            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 flex items-center justify-center text-white transition cursor-pointer"
-            title="Account & Integrations"
-          >
-            {user?.photoURL ? (
-              <img src={user.photoURL} alt="" className="w-full h-full rounded-full object-cover" />
-            ) : (
-              <UserCheck className="w-4.5 h-4.5 text-neutral-300" />
-            )}
-          </button>
-        )}
       </div>
-
-      {/* Sign in to YouTube Music Banner */}
-      {!user && (
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-neutral-900 via-neutral-900/90 to-neutral-900/60 border border-white/10 flex items-center justify-between gap-3 shadow-xl">
-          <div className="min-w-0">
-            <h3 className="text-sm font-bold text-white">Sign in to YouTube Music</h3>
-            <p className="text-xs text-neutral-400 mt-0.5 truncate">Get personalized recommendations for your taste</p>
-          </div>
-          <button
-            onClick={onOpenAccountModal}
-            className="px-4 py-2 rounded-full bg-white hover:bg-neutral-100 text-black font-bold text-xs shrink-0 shadow transition cursor-pointer"
-          >
-            Sign in
-          </button>
-        </div>
-      )}
 
       {/* 1. Category & Mood Filter Pills */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 px-0.5 scroll-smooth">

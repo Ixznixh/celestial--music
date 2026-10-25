@@ -3,7 +3,6 @@ import { motion } from 'motion/react';
 import { ChevronLeft, Sliders, Home, Search, Library, Zap } from 'lucide-react';
 import { AppView } from '../../types';
 import { PWAInstallButton } from '../common/PWAInstallButton';
-import { AuthButton } from '../common/AuthButton';
 
 interface TopBarProps {
   currentView: AppView;
@@ -19,7 +18,6 @@ export const TopBar: React.FC<TopBarProps> = ({
   currentView,
   onNavigateBack,
   onOpenSettings,
-  onOpenAccountModal,
   onNavigate,
   title,
   lowPowerMode = false,
@@ -152,7 +150,6 @@ export const TopBar: React.FC<TopBarProps> = ({
             </motion.button>
           )}
 
-          <AuthButton onOpenAccountModal={onOpenAccountModal} />
           <PWAInstallButton variant="pill" />
 
           <motion.button
